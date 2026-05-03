@@ -20,9 +20,9 @@
 	}
 </script>
 
-<div class="space-y-10 p-8">
-	<header class="flex items-end justify-between">
-		<div>
+<div class="space-y-10 p-4 sm:p-8">
+	<header class="flex flex-wrap items-end justify-between gap-3">
+		<div class="min-w-0">
 			<h1 class="font-mono text-2xl font-light tracking-tight">Inbox</h1>
 			<p class="mt-1 text-sm text-muted-foreground">
 				Papers not in any thread · {unfiled.length} unfiled · {reading.length} reading · {unread.length} unread

@@ -292,8 +292,8 @@
 				}
 			}}
 		/>
-		<div class="mt-2 flex items-center justify-between">
-			<span class="text-[10px] text-muted-foreground">
+		<div class="mt-2 flex flex-wrap items-center justify-end gap-2 sm:justify-between">
+			<span class="hidden min-w-0 flex-1 truncate text-[10px] text-muted-foreground sm:block">
 				Powered by your local <code class="font-mono">claude</code> CLI · skills enabled
 			</span>
 			<Button size="sm" onclick={send} disabled={streaming || !composing.trim()}>

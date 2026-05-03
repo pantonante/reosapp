@@ -23,15 +23,15 @@
 	}
 </script>
 
-<div class="space-y-6 p-8">
-	<header class="flex items-end justify-between">
-		<div>
+<div class="space-y-6 p-4 sm:p-8">
+	<header class="flex flex-wrap items-end justify-between gap-3">
+		<div class="min-w-0">
 			<h1 class="font-mono text-2xl font-light tracking-tight">Threads</h1>
 			<p class="mt-1 text-sm text-muted-foreground">
 				{visibleThreads.length} threads
 			</p>
 		</div>
-		<div class="flex items-center gap-2">
+		<div class="flex flex-wrap items-center gap-2">
 			<div class="flex gap-1 rounded-md border border-border/60 p-0.5">
 				<Button
 					variant={!ui.threadsCompact ? 'secondary' : 'ghost'}
@@ -73,7 +73,7 @@
 			{/each}
 		</div>
 	{:else}
-		<div class="grid gap-6 lg:grid-cols-3">
+		<div class="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
 			{#each cols as col (col.status)}
 				<div>
 					<h3 class="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">

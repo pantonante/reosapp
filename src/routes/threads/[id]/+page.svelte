@@ -64,10 +64,10 @@
 		Thread not found.
 	</div>
 {:else}
-	<div class="space-y-6 p-8">
+	<div class="space-y-6 p-4 sm:p-8">
 		<header>
-			<div class="flex items-start justify-between gap-4">
-				<div class="flex-1">
+			<div class="flex flex-wrap items-start justify-between gap-3">
+				<div class="min-w-0 flex-1 basis-full lg:basis-0">
 					<input
 						class="w-full bg-transparent font-mono text-2xl font-light tracking-tight text-foreground focus:outline-none"
 						value={thread.title}
@@ -81,7 +81,7 @@
 						onblur={(e) => threads.update(thread.id, { question: e.currentTarget.value })}
 					></textarea>
 				</div>
-				<div class="flex items-center gap-2">
+				<div class="flex flex-wrap items-center gap-2">
 					<Button onclick={openAddPaper}>
 						<Plus class="h-4 w-4" />
 						Add paper
@@ -128,7 +128,7 @@
 			</div>
 		</header>
 
-		<div class="grid gap-6 lg:grid-cols-3">
+		<div class="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
 			{#each cols as col (col.status)}
 				<div>
 					<h3 class="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">

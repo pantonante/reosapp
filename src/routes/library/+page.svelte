@@ -50,13 +50,13 @@
 	}
 </script>
 
-<div class="space-y-6 p-8">
-	<header class="flex items-end justify-between">
-		<div>
+<div class="space-y-6 p-4 sm:p-8">
+	<header class="flex flex-wrap items-end justify-between gap-3">
+		<div class="min-w-0">
 			<h1 class="font-mono text-2xl font-light tracking-tight">Library</h1>
 			<p class="mt-1 text-sm text-muted-foreground">{filtered.length} of {papers.items.length} papers</p>
 		</div>
-		<div class="flex gap-1 rounded-md border border-border/60 p-0.5">
+		<div class="flex shrink-0 gap-1 rounded-md border border-border/60 p-0.5">
 			<Button
 				variant={view === 'card' ? 'secondary' : 'ghost'}
 				size="icon"
@@ -100,7 +100,7 @@
 			{/each}
 		</select>
 		<select
-			class="ml-auto h-9 rounded-md border border-input bg-background px-3 text-sm"
+			class="h-9 rounded-md border border-input bg-background px-3 text-sm sm:ml-auto"
 			bind:value={sortBy}
 		>
 			<option value="added">Recently added</option>
@@ -111,7 +111,7 @@
 	</div>
 
 	{#if view === 'card'}
-		<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+		<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
 			{#each filtered as p (p.id)}
 				<PaperCard paper={p} compact onclick={() => open(p.id)} />
 			{/each}

@@ -43,7 +43,7 @@
 	}
 </script>
 
-<div class="mx-auto max-w-3xl space-y-6 p-8">
+<div class="mx-auto max-w-3xl space-y-6 p-4 sm:p-8">
 	<header>
 		<h1 class="font-mono text-2xl font-light tracking-tight">Settings</h1>
 		<p class="mt-1 text-sm text-muted-foreground">App configuration and cache management.</p>
@@ -54,13 +54,13 @@
 		<p class="mt-1 text-xs text-muted-foreground">
 			Where Re:OS stores your library on disk.
 		</p>
-		<div class="mt-3 flex gap-2">
+		<div class="mt-3 flex flex-wrap gap-2">
 			<Input
 				value={config.value.papersDir ?? ''}
 				oninput={(e: Event) =>
 					config.update({ papersDir: (e.target as HTMLInputElement).value || null })}
 				placeholder="/Users/you/Documents/reos"
-				class="font-mono text-xs"
+				class="min-w-0 flex-1 font-mono text-xs"
 			/>
 			<Button variant="outline" onclick={pickFolder}>
 				<FolderOpen class="h-4 w-4" />
@@ -75,7 +75,7 @@
 			Lives at <code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">~/.reos/cache/reos.db</code>.
 			Rebuild from your papers folder if files were edited externally.
 		</p>
-		<div class="mt-3 grid grid-cols-3 gap-4 text-xs">
+		<div class="mt-3 grid grid-cols-2 gap-4 text-xs sm:grid-cols-3">
 			<div>
 				<div class="text-muted-foreground">Papers</div>
 				<div class="mt-0.5 font-mono">{papers.items.length}</div>

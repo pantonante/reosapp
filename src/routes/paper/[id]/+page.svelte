@@ -19,7 +19,11 @@
 
 	let mainView = $state<MainView>('pdf');
 	let panel = $state<SidePanel>('info');
-	let sidebarOpen = $state(true);
+	// Auto-collapse the right detail panel on narrow viewports (e.g. Mac half-screen)
+	// where a 300px panel would leave the main pane too cramped to use.
+	let sidebarOpen = $state(
+		typeof window === 'undefined' ? true : window.innerWidth >= 900
+	);
 	let notes = $state('');
 	let notesLoaded = $state(false);
 	let movingThread = $state(false);
@@ -182,7 +186,7 @@
 
 			{#if !ui.pdfFullscreen && sidebarOpen}
 				<aside
-					class="flex w-[340px] shrink-0 flex-col border-l border-border/60 bg-card"
+					class="flex w-[260px] shrink-0 flex-col border-l border-border/60 bg-card lg:w-[300px] xl:w-[340px]"
 				>
 					<div class="flex border-b border-border/60">
 						{#each ['info', 'notes'] as p (p)}

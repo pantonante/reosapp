@@ -11,7 +11,7 @@
 	}
 </script>
 
-<div class="space-y-6 p-8">
+<div class="space-y-6 p-4 sm:p-8">
 	<header>
 		<h1 class="font-mono text-2xl font-light tracking-tight">Archive</h1>
 		<p class="mt-1 text-sm text-muted-foreground">
