@@ -2,7 +2,7 @@
 	import { Button, Dialog, Input } from '$lib/components/ui';
 	import { extractArxivId, fetchArxivPaper, downloadArxivPdf } from '$lib/arxiv';
 	import { writePaperPdf } from '$lib/tauri/fs';
-	import { papers, ui } from '$lib/stores.svelte';
+	import { papers, threads, ui } from '$lib/stores.svelte';
 	import { goto } from '$app/navigation';
 	import { Loader2, Link2, Upload } from 'lucide-svelte';
 
@@ -11,11 +11,28 @@
 	let error = $state<string | null>(null);
 	let dragActive = $state(false);
 
+	const targetThreadId = $derived(ui.addPaperTargetThreadId ?? 'inbox');
+	const targetThreadTitle = $derived(
+		targetThreadId === 'inbox' ? null : threads.get(targetThreadId)?.title ?? null
+	);
+
 	function reset() {
 		raw = '';
 		busy = false;
 		error = null;
 		dragActive = false;
+	}
+
+	// Append a ThreadPaper entry to the target thread after a successful add.
+	// No-op when the target is inbox (papers without a thread aren't tracked
+	// in any Thread.papers array).
+	async function attachToThread(paperId: string) {
+		if (targetThreadId === 'inbox') return;
+		const dest = threads.get(targetThreadId);
+		if (!dest) return;
+		await threads.update(targetThreadId, {
+			papers: [...dest.papers, { paperId, contextNote: '', order: dest.papers.length }]
+		});
 	}
 
 	async function importFromArxiv() {
@@ -35,8 +52,9 @@
 		try {
 			const paper = await fetchArxivPaper(arxivId);
 			const pdfBytes = await downloadArxivPdf(arxivId);
-			const pdfPath = await writePaperPdf('inbox', arxivId, pdfBytes);
-			await papers.add({ ...paper, pdfPath, threadId: 'inbox' });
+			const pdfPath = await writePaperPdf(targetThreadId, arxivId, pdfBytes);
+			await papers.add({ ...paper, pdfPath, threadId: targetThreadId });
+			await attachToThread(paper.id);
 			ui.addPaperOpen = false;
 			reset();
 			goto(`/paper/${paper.id}`);
@@ -60,7 +78,7 @@
 		try {
 			const buf = new Uint8Array(await file.arrayBuffer());
 			const arxivId = extractArxivId(file.name) ?? `local-${Date.now()}`;
-			const pdfPath = await writePaperPdf('inbox', arxivId, buf);
+			const pdfPath = await writePaperPdf(targetThreadId, arxivId, buf);
 			const id = `p${Date.now()}`;
 			const title = file.name.replace(/\.pdf$/i, '');
 			await papers.add({
@@ -78,8 +96,9 @@
 				arxivUrl: '',
 				addedAt: new Date().toISOString(),
 				links: [],
-				threadId: 'inbox'
+				threadId: targetThreadId
 			});
+			await attachToThread(id);
 			ui.addPaperOpen = false;
 			reset();
 			goto(`/paper/${id}`);
@@ -92,10 +111,13 @@
 
 <Dialog
 	bind:open={ui.addPaperOpen}
-	title="Add paper"
+	title={targetThreadTitle ? `Add paper to “${targetThreadTitle}”` : 'Add paper'}
 	description="Paste an arxiv link or ID, or drop a PDF file."
 	onOpenChange={(open) => {
-		if (!open) reset();
+		if (!open) {
+			reset();
+			ui.addPaperTargetThreadId = null;
+		}
 	}}
 >
 	<div class="space-y-4">

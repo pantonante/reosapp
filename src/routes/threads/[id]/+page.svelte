@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
 	import { papers, threads, ui } from '$lib/stores.svelte';
-	import { Button, Badge, Card, Dialog, Input } from '$lib/components/ui';
+	import { Button, Badge } from '$lib/components/ui';
 	import { goto } from '$app/navigation';
 	import { Plus, Trash2 } from 'lucide-svelte';
 	import type { ReadingStatus, ThreadStatus } from '$lib/types';
@@ -11,9 +11,6 @@
 	const id = $derived(page.params.id!);
 	const thread = $derived(threads.get(id));
 
-	let addPapersOpen = $state(false);
-	let paperSearch = $state('');
-
 	$effect(() => {
 		if (id) untrack(() => ui.openThread(id));
 	});
@@ -21,14 +18,6 @@
 	const threadPapers = $derived.by(() =>
 		(thread?.papers ?? []).map((tp) => papers.get(tp.paperId)).filter(Boolean)
 	);
-
-	const eligible = $derived.by(() => {
-		const q = paperSearch.trim().toLowerCase();
-		const owned = new Set(thread?.papers.map((p) => p.paperId) ?? []);
-		return papers.items
-			.filter((p) => !owned.has(p.id))
-			.filter((p) => !q || `${p.title} ${p.arxivId}`.toLowerCase().includes(q));
-	});
 
 	const cols: { status: ReadingStatus; label: string }[] = [
 		{ status: 'unread', label: 'Unread' },
@@ -45,23 +34,14 @@
 		await threads.update(thread.id, { status: threadStatus });
 	}
 
-	async function addPaper(paperId: string) {
+	function openAddPaper() {
 		if (!thread) return;
-		const next = {
-			...thread,
-			papers: [
-				...thread.papers,
-				{ paperId, contextNote: '', order: thread.papers.length }
-			]
-		};
-		await threads.update(thread.id, next);
+		ui.addPaperTargetThreadId = thread.id;
+		ui.addPaperOpen = true;
 	}
 
 	async function removePaper(paperId: string) {
-		if (!thread) return;
-		await threads.update(thread.id, {
-			papers: thread.papers.filter((p) => p.paperId !== paperId)
-		});
+		await papers.move(paperId, 'inbox');
 	}
 
 	async function deleteThread() {
@@ -102,6 +82,10 @@
 					></textarea>
 				</div>
 				<div class="flex items-center gap-2">
+					<Button onclick={openAddPaper}>
+						<Plus class="h-4 w-4" />
+						Add paper
+					</Button>
 					<select
 						class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 						value={thread.status}
@@ -121,13 +105,6 @@
 				<span>created {thread.createdAt.slice(0, 10)}</span>
 			</div>
 		</header>
-
-		<div class="flex justify-end">
-			<Button onclick={() => (addPapersOpen = true)}>
-				<Plus class="h-4 w-4" />
-				Add paper
-			</Button>
-		</div>
 
 		<div class="grid gap-6 lg:grid-cols-3">
 			{#each cols as col (col.status)}
@@ -160,21 +137,4 @@
 
 		<!-- TODO: thread chat panel -->
 	</div>
-
-	<Dialog bind:open={addPapersOpen} title="Add papers to thread">
-		<Input bind:value={paperSearch} placeholder="Search papers in your library…" />
-		<div class="max-h-80 space-y-1 overflow-y-auto">
-			{#each eligible as p (p.id)}
-				<button
-					class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent/10"
-					onclick={() => addPaper(p.id)}
-				>
-					<span class="flex-1 truncate">{p.title}</span>
-					<span class="font-mono text-[10px] text-muted-foreground">{p.arxivId}</span>
-				</button>
-			{:else}
-				<p class="px-2 py-4 text-center text-xs text-muted-foreground">No matching papers.</p>
-			{/each}
-		</div>
-	</Dialog>
 {/if}

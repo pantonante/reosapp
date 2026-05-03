@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { Command, Dialog as DialogPrimitive } from 'bits-ui';
 	import { goto } from '$app/navigation';
-	import { papers, threads, ui } from '$lib/stores.svelte';
+	import { ui } from '$lib/stores.svelte';
 	import { rebuildCache } from '$lib/tauri/rebuild';
-	import { Inbox, Library, Layers, Plus, FileText, RefreshCw, Settings } from 'lucide-svelte';
+	import { Inbox, Library, Layers, Plus, RefreshCw, Settings, FolderPlus } from 'lucide-svelte';
 
 	let value = $state('');
 
@@ -26,13 +26,16 @@
 
 	const commandActions = [
 		{ label: 'Add paper', icon: Plus, run: () => (ui.addPaperOpen = true) },
+		{ label: 'New thread', icon: FolderPlus, run: () => (ui.newThreadOpen = true) },
 		{ label: 'Rebuild cache', icon: RefreshCw, run: () => rebuildCache() }
 	];
 
 	function handleKey(e: KeyboardEvent) {
 		if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
 			e.preventDefault();
-			ui.commandPaletteOpen = !ui.commandPaletteOpen;
+			const next = !ui.commandPaletteOpen;
+			ui.commandPaletteOpen = next;
+			if (next) ui.quickOpenOpen = false;
 		}
 	}
 </script>
@@ -48,7 +51,7 @@
 			<Command.Root label="Command palette" class="w-full">
 				<Command.Input
 					bind:value
-					placeholder="Search papers, threads, or commands…"
+					placeholder="Search commands…"
 					class="w-full border-0 border-b border-border/60 bg-transparent px-4 py-3 text-sm focus:outline-none"
 				/>
 				<Command.List class="max-h-80 overflow-y-auto p-1">
@@ -94,48 +97,6 @@
 						</Command.GroupItems>
 					</Command.Group>
 
-					{#if papers.items.length > 0}
-						<Command.Group>
-							<Command.GroupHeading class="mt-1 px-2 py-1 text-[10px] uppercase tracking-wider text-muted-foreground">
-								Papers
-							</Command.GroupHeading>
-							<Command.GroupItems>
-								{#each papers.items.slice(0, 20) as paper (paper.id)}
-									<Command.Item
-										value={`paper:${paper.title} ${paper.authors.join(' ')} ${paper.arxivId}`}
-										onSelect={() => run(() => goto(`/paper/${paper.id}`))}
-										class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-foreground data-[selected]:bg-accent/15 data-[selected]:text-accent"
-									>
-										<FileText class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-										<span class="truncate">{paper.title}</span>
-										<span class="ml-auto shrink-0 font-mono text-[10px] text-muted-foreground">
-											{paper.arxivId}
-										</span>
-									</Command.Item>
-								{/each}
-							</Command.GroupItems>
-						</Command.Group>
-					{/if}
-
-					{#if threads.items.length > 0}
-						<Command.Group>
-							<Command.GroupHeading class="mt-1 px-2 py-1 text-[10px] uppercase tracking-wider text-muted-foreground">
-								Threads
-							</Command.GroupHeading>
-							<Command.GroupItems>
-								{#each threads.items.slice(0, 20) as thread (thread.id)}
-									<Command.Item
-										value={`thread:${thread.title} ${thread.question}`}
-										onSelect={() => run(() => goto(`/threads/${thread.id}`))}
-										class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-foreground data-[selected]:bg-accent/15 data-[selected]:text-accent"
-									>
-										<Layers class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-										<span class="truncate">{thread.title}</span>
-									</Command.Item>
-								{/each}
-							</Command.GroupItems>
-						</Command.Group>
-					{/if}
 				</Command.List>
 			</Command.Root>
 		</DialogPrimitive.Content>

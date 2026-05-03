@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
-	import { papers, ui } from '$lib/stores.svelte';
-	import { Button, Badge, Textarea, Separator } from '$lib/components/ui';
+	import { papers, threads, ui } from '$lib/stores.svelte';
+	import { Button, Badge, Textarea, Separator, Dialog, Input } from '$lib/components/ui';
 	import PdfViewer from '$lib/components/PdfViewer.svelte';
 	import PaperChat from '$lib/components/PaperChat.svelte';
 	import PaperSummary from '$lib/components/PaperSummary.svelte';
 	import { revealInFinder, openExternal } from '$lib/tauri/shell';
 	import { readNotes, writeNotes } from '$lib/tauri/fs';
-	import { ExternalLink, FolderOpen, Star, FileText, Sparkles, MessageSquare, PanelRight } from 'lucide-svelte';
+	import { ExternalLink, FolderOpen, Star, FileText, Sparkles, MessageSquare, PanelRight, Inbox, Check, ArrowRightLeft } from 'lucide-svelte';
 	import type { ReadingStatus } from '$lib/types';
 
 	const id = $derived(page.params.id!);
@@ -22,6 +22,33 @@
 	let sidebarOpen = $state(true);
 	let notes = $state('');
 	let notesLoaded = $state(false);
+	let movingThread = $state(false);
+	let movePickerOpen = $state(false);
+	let moveQuery = $state('');
+
+	const currentThreadId = $derived(paper?.threadId ?? 'inbox');
+	const currentThreadLabel = $derived(
+		currentThreadId === 'inbox' ? 'Inbox' : threads.get(currentThreadId)?.title ?? 'Inbox'
+	);
+
+	type MoveOption = { id: string; label: string; question: string; isInbox: boolean };
+
+	const moveOptions = $derived.by<MoveOption[]>(() => {
+		const q = moveQuery.trim().toLowerCase();
+		const all: MoveOption[] = [
+			{ id: 'inbox', label: 'Inbox', question: 'Untriaged papers', isInbox: true },
+			...threads.items.map((t) => ({
+				id: t.id,
+				label: t.title || '(untitled thread)',
+				question: t.question ?? '',
+				isInbox: false
+			}))
+		];
+		if (!q) return all;
+		return all.filter(
+			(o) => o.label.toLowerCase().includes(q) || o.question.toLowerCase().includes(q)
+		);
+	});
 
 	$effect(() => {
 		// Depend only on `id` — untrack the openPaper call so its read of
@@ -43,6 +70,13 @@
 		}
 	});
 
+	// When the paper moves between threads, its notes file relocates with it.
+	// Force a reload so the textarea reflects the new path.
+	$effect(() => {
+		void paper?.threadId;
+		notesLoaded = false;
+	});
+
 	async function saveNotes() {
 		if (!paper) return;
 		await writeNotes(paper.threadId ?? 'inbox', paper.arxivId, notes);
@@ -56,6 +90,26 @@
 	async function setRating(r: number) {
 		if (!paper) return;
 		await papers.update(paper.id, { rating: paper.rating === r ? null : r });
+	}
+
+	function openMovePicker() {
+		moveQuery = '';
+		movePickerOpen = true;
+	}
+
+	async function moveToThread(toId: string) {
+		if (!paper) return;
+		if (toId === currentThreadId) {
+			movePickerOpen = false;
+			return;
+		}
+		movingThread = true;
+		movePickerOpen = false;
+		try {
+			await papers.move(paper.id, toId);
+		} finally {
+			movingThread = false;
+		}
 	}
 
 	const mainTabs: { id: MainView; label: string; icon: typeof FileText }[] = [
@@ -177,6 +231,35 @@
 								</div>
 
 								<div>
+									<div class="flex items-center justify-between">
+										<div class="text-[10px] uppercase tracking-wider text-muted-foreground">
+											Thread
+										</div>
+										{#if movingThread}
+											<span class="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+												<span class="h-2 w-2 animate-pulse rounded-full bg-accent"></span>
+												moving…
+											</span>
+										{/if}
+									</div>
+									<button
+										type="button"
+										class="mt-2 flex w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-left text-sm transition-colors hover:bg-accent/5 disabled:opacity-50"
+										disabled={movingThread}
+										onclick={openMovePicker}
+									>
+										<span class="flex min-w-0 items-center gap-2">
+											{#if currentThreadId === 'inbox'}
+												<Inbox class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+											{/if}
+											<span class="truncate">{currentThreadLabel}</span>
+										</span>
+										<ArrowRightLeft class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+									</button>
+									<p class="mt-1 text-[10px] text-muted-foreground">Click to move to another thread.</p>
+								</div>
+
+								<div>
 									<div class="text-[10px] uppercase tracking-wider text-muted-foreground">Rating</div>
 									<div class="mt-2 flex gap-0.5">
 										{#each [1, 2, 3, 4, 5] as n (n)}
@@ -242,4 +325,45 @@
 			{/if}
 		</div>
 	</div>
+
+	<Dialog
+		bind:open={movePickerOpen}
+		title="Move paper to…"
+		description="Pick a thread, or move back to Inbox."
+		onOpenChange={(open) => {
+			if (!open) moveQuery = '';
+		}}
+	>
+		<div class="space-y-3">
+			<Input bind:value={moveQuery} placeholder="Search threads…" autofocus />
+			<div class="max-h-80 space-y-0.5 overflow-y-auto">
+				{#each moveOptions as o (o.id)}
+					{@const isCurrent = o.id === currentThreadId}
+					<button
+						type="button"
+						class="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm transition-colors hover:bg-accent/10 disabled:cursor-default disabled:opacity-60"
+						disabled={isCurrent}
+						onclick={() => moveToThread(o.id)}
+					>
+						{#if o.isInbox}
+							<Inbox class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+						{/if}
+						<span class="flex min-w-0 flex-1 flex-col">
+							<span class="truncate font-medium">{o.label}</span>
+							{#if o.question}
+								<span class="truncate text-[11px] text-muted-foreground">{o.question}</span>
+							{/if}
+						</span>
+						{#if isCurrent}
+							<span class="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+								<Check class="h-3 w-3" /> current
+							</span>
+						{/if}
+					</button>
+				{:else}
+					<p class="px-2 py-6 text-center text-xs text-muted-foreground">No threads match.</p>
+				{/each}
+			</div>
+		</div>
+	</Dialog>
 {/if}

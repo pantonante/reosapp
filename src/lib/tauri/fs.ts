@@ -5,6 +5,7 @@ import {
 	readDir,
 	readTextFile,
 	remove,
+	rename,
 	writeFile,
 	writeTextFile
 } from '@tauri-apps/plugin-fs';
@@ -173,6 +174,37 @@ export async function readPaperSummary(
 export async function removePaperFolder(threadSlug: string, arxivId: string): Promise<void> {
 	const dir = await paperDir(threadSlug, arxivId);
 	if (await exists(dir)) await remove(dir, { recursive: true });
+}
+
+// Relocates a paper's folder between threads. Returns the new paper.pdf path.
+// If from === to, no-op. Caller is responsible for updating DB rows / store state.
+export async function movePaperFolder(
+	fromSlug: string,
+	toSlug: string,
+	arxivId: string
+): Promise<string> {
+	if (fromSlug === toSlug) {
+		return paperPdfPath(toSlug, arxivId);
+	}
+	const fromDir = await paperDir(fromSlug, arxivId);
+	const toDir = await paperDir(toSlug, arxivId);
+	const toThreadDir = await threadDir(toSlug);
+	const toPapersDir = await join(toThreadDir, 'papers');
+	if (!(await exists(toThreadDir))) await mkdir(toThreadDir, { recursive: true });
+	if (!(await exists(toPapersDir))) await mkdir(toPapersDir, { recursive: true });
+	if (await exists(toDir)) {
+		// Destination already has a folder for this arxivId — clear it before
+		// renaming, otherwise the rename will fail on most platforms.
+		await remove(toDir, { recursive: true });
+	}
+	if (await exists(fromDir)) {
+		await rename(fromDir, toDir);
+	} else {
+		// Source missing (e.g., paper was added but pdf write failed) — still
+		// create the destination so subsequent writes have somewhere to go.
+		await mkdir(toDir, { recursive: true });
+	}
+	return join(toDir, 'paper.pdf');
 }
 
 export async function removeThreadFolder(slug: string): Promise<void> {

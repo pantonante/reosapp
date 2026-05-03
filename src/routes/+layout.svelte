@@ -5,7 +5,9 @@
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import PaperTabs from '$lib/components/PaperTabs.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
+	import QuickOpenModal from '$lib/components/QuickOpenModal.svelte';
 	import AddPaperModal from '$lib/components/AddPaperModal.svelte';
+	import NewThreadModal from '$lib/components/NewThreadModal.svelte';
 	import FirstRunWizard from '$lib/components/FirstRunWizard.svelte';
 
 	let { children } = $props();
@@ -55,5 +57,7 @@
 		</div>
 	</div>
 	<CommandPalette />
+	<QuickOpenModal />
 	<AddPaperModal />
+	<NewThreadModal />
 {/if}

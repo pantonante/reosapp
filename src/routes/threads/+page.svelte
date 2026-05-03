@@ -1,13 +1,9 @@
 <script lang="ts">
 	import { threads, ui } from '$lib/stores.svelte';
-	import { Button, Card, Input, Dialog, Textarea } from '$lib/components/ui';
+	import { Button, Card } from '$lib/components/ui';
 	import { goto } from '$app/navigation';
 	import { Plus, LayoutGrid, Rows3 } from 'lucide-svelte';
 	import type { Thread, ThreadStatus } from '$lib/types';
-
-	let createOpen = $state(false);
-	let newTitle = $state('');
-	let newQuestion = $state('');
 
 	const cols: { status: ThreadStatus; label: string }[] = [
 		{ status: 'active', label: 'Active' },
@@ -17,24 +13,6 @@
 
 	function byStatus(status: ThreadStatus): Thread[] {
 		return threads.items.filter((t) => t.status === status);
-	}
-
-	async function createThread() {
-		const t: Thread = {
-			id: `t${Date.now()}`,
-			title: newTitle.trim() || 'Untitled thread',
-			question: newQuestion.trim(),
-			status: 'active',
-			papers: [],
-			createdAt: new Date().toISOString(),
-			updatedAt: new Date().toISOString()
-		};
-		await threads.add(t);
-		newTitle = '';
-		newQuestion = '';
-		createOpen = false;
-		ui.openThread(t.id);
-		goto(`/threads/${t.id}`);
 	}
 
 	function open(t: Thread) {
@@ -70,7 +48,7 @@
 					<Rows3 class="h-4 w-4" />
 				</Button>
 			</div>
-			<Button onclick={() => (createOpen = true)}>
+			<Button onclick={() => (ui.newThreadOpen = true)}>
 				<Plus class="h-4 w-4" />
 				New thread
 			</Button>
@@ -124,32 +102,10 @@
 	{#if threads.items.length === 0}
 		<div class="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/60 py-20 text-center text-sm text-muted-foreground">
 			<p>No threads yet.</p>
-			<Button class="mt-4" onclick={() => (createOpen = true)}>
+			<Button class="mt-4" onclick={() => (ui.newThreadOpen = true)}>
 				<Plus class="h-4 w-4" />
 				Create your first thread
 			</Button>
 		</div>
 	{/if}
 </div>
-
-<Dialog bind:open={createOpen} title="New thread" description="Group papers around a research question.">
-	<div class="space-y-3">
-		<div>
-			<label for="t-title" class="text-xs text-muted-foreground">Title</label>
-			<Input id="t-title" bind:value={newTitle} placeholder="Linear attention scaling" />
-		</div>
-		<div>
-			<label for="t-question" class="text-xs text-muted-foreground">Question (optional)</label>
-			<Textarea
-				id="t-question"
-				bind:value={newQuestion}
-				placeholder="What is the practical ceiling for linear-attention transformers?"
-				rows={3}
-			/>
-		</div>
-		<div class="flex justify-end gap-2 pt-2">
-			<Button variant="ghost" onclick={() => (createOpen = false)}>Cancel</Button>
-			<Button onclick={createThread}>Create</Button>
-		</div>
-	</div>
-</Dialog>

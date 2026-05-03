@@ -174,12 +174,22 @@
 		closeMenu();
 		if (activeWasRemoved) navigateAfterClose(tab);
 	}
+
+	function handleKey(e: KeyboardEvent) {
+		if ((e.metaKey || e.ctrlKey) && e.key === 'w') {
+			const active = tabs.find((t) => isActive(t));
+			if (!active) return;
+			e.preventDefault();
+			close(active, new MouseEvent('click'));
+		}
+	}
 </script>
 
 <svelte:window
 	onclick={closeMenu}
 	onkeydown={(e) => {
 		if (e.key === 'Escape') closeMenu();
+		handleKey(e);
 	}}
 />
 
