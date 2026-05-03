@@ -59,13 +59,17 @@ function createPapersStore() {
 
 // --- Threads store ---
 
+// The "inbox" thread is an internal bucket for un-threaded papers; it must
+// never appear in the user-visible threads list, the threads page, or as a tab.
+const INBOX_THREAD_ID = 'inbox';
+
 function createThreadsStore() {
 	let items = $state<Thread[]>([]);
 	let loaded = $state(false);
 
 	return {
 		get items() {
-			return items;
+			return items.filter((t) => t.id !== INBOX_THREAD_ID);
 		},
 		set items(v: Thread[]) {
 			items = v;
@@ -176,6 +180,12 @@ export const ui = (() => {
 			writeLocal('reos:tabOrder', tabOrder);
 		}
 	}
+	// The inbox thread is sidebar-only — strip any stale tab that references it.
+	const cleaned = tabOrder.filter((t) => !(t.kind === 'thread' && t.id === INBOX_THREAD_ID));
+	if (cleaned.length !== tabOrder.length) {
+		tabOrder = cleaned;
+		writeLocal('reos:tabOrder', tabOrder);
+	}
 
 	let threadsCompact = $state(readLocal('reos:threadsCompact', false));
 
@@ -275,6 +285,11 @@ export const ui = (() => {
 			persistTabs();
 		},
 		openThread(id: string) {
+			if (id === INBOX_THREAD_ID) {
+				// Inbox is sidebar-only; don't materialize it as a tab.
+				activeThreadId = id;
+				return;
+			}
 			if (!tabOrder.some((t) => t.kind === 'thread' && t.id === id)) {
 				tabOrder = [...tabOrder, { kind: 'thread', id }];
 				persistTabs();

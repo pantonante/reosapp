@@ -29,6 +29,10 @@
 	}
 
 	function activate(tab: Tab) {
+		// Guard: if the tab is no longer open (e.g. close handler bubbled here
+		// with a stale reference), don't navigate — that would re-add it via
+		// the [id] page's openPaper effect.
+		if (!ui.openTabs.some((t) => t.kind === tab.kind && t.id === tab.id)) return;
 		if (tab.kind === 'paper') {
 			ui.activePaperId = tab.id;
 			goto(`/paper/${tab.id}`);
@@ -230,18 +234,20 @@
 					<Layers class="h-3 w-3" />
 				{/if}
 				<span class="max-w-[16ch] truncate">{tab.title}</span>
-				<span
-					role="button"
-					tabindex="0"
+				<button
+					type="button"
 					class="rounded-sm p-0.5 opacity-0 transition-opacity hover:bg-accent/15 group-hover:opacity-100"
-					onclick={(e) => close(tab, e)}
-					onkeydown={(e) => {
-						if (e.key === 'Enter') close(tab, e as unknown as MouseEvent);
+					onclick={(e) => {
+						e.stopPropagation();
+						e.preventDefault();
+						close(tab, e);
 					}}
+					onpointerdown={(e) => e.stopPropagation()}
+					onmousedown={(e) => e.stopPropagation()}
 					aria-label="Close tab"
 				>
 					<X class="h-3 w-3" />
-				</span>
+				</button>
 				{#if showAfter}
 					<span class="pointer-events-none absolute -right-px top-0 z-10 h-full w-0.5 bg-accent"></span>
 				{/if}

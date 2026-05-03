@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { untrack } from 'svelte';
 	import { papers, ui } from '$lib/stores.svelte';
 	import { Button, Badge, Textarea, Separator } from '$lib/components/ui';
 	import PdfViewer from '$lib/components/PdfViewer.svelte';
@@ -23,7 +24,10 @@
 	let notesLoaded = $state(false);
 
 	$effect(() => {
-		if (id) ui.openPaper(id);
+		// Depend only on `id` — untrack the openPaper call so its read of
+		// tabOrder doesn't make this effect re-fire when other code mutates
+		// the tab list (e.g. closing the active tab).
+		if (id) untrack(() => ui.openPaper(id));
 	});
 
 	async function loadNotes() {

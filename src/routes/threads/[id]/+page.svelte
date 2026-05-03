@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { untrack } from 'svelte';
 	import { papers, threads, ui } from '$lib/stores.svelte';
 	import { Button, Badge, Card, Dialog, Input } from '$lib/components/ui';
 	import { goto } from '$app/navigation';
@@ -14,7 +15,7 @@
 	let paperSearch = $state('');
 
 	$effect(() => {
-		if (id) ui.openThread(id);
+		if (id) untrack(() => ui.openThread(id));
 	});
 
 	const threadPapers = $derived.by(() =>
