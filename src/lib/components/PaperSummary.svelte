@@ -265,8 +265,8 @@
 				Regenerate
 			</Button>
 		</div>
-		<div class="flex-1 overflow-y-auto p-4">
-			<div class="summary-md text-xs leading-relaxed">
+		<div class="flex-1 overflow-y-auto px-6 py-8 sm:px-10">
+			<div class="summary-md mx-auto">
 				{@html summaryHtml}
 			</div>
 		</div>
@@ -292,88 +292,182 @@
 </div>
 
 <style>
+	/* Reading-optimized typography for paper summaries with inline LaTeX.
+	   A book-style serif pairs naturally with KaTeX (Computer Modern roots),
+	   so prose and math share a consistent texture. */
+	.summary-md {
+		font-family: 'Charter', 'Iowan Old Style', 'Source Serif 4',
+			'Source Serif Pro', 'Palatino Linotype', 'Book Antiqua', Palatino,
+			Georgia, serif;
+		font-size: 15.5px;
+		line-height: 1.7;
+		letter-spacing: 0.005em;
+		color: hsl(var(--foreground) / 0.92);
+		font-feature-settings: 'kern', 'liga', 'clig', 'calt', 'onum';
+		text-rendering: optimizeLegibility;
+		-webkit-font-smoothing: antialiased;
+		max-width: 68ch;
+		hyphens: auto;
+	}
+
 	.summary-md :global(h1) {
-		font-size: 1rem;
+		font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Inter',
+			system-ui, sans-serif;
+		font-size: 1.5rem;
 		font-weight: 600;
+		line-height: 1.25;
+		letter-spacing: -0.01em;
+		color: hsl(var(--foreground));
 		margin-top: 0.25rem;
-		margin-bottom: 0.5rem;
+		margin-bottom: 0.9rem;
 	}
 	.summary-md :global(h2) {
-		font-size: 0.85rem;
+		font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Inter',
+			system-ui, sans-serif;
+		font-size: 1.05rem;
 		font-weight: 600;
-		margin-top: 1rem;
-		margin-bottom: 0.35rem;
+		line-height: 1.3;
+		letter-spacing: 0.01em;
+		text-transform: uppercase;
 		color: hsl(var(--accent));
+		margin-top: 2rem;
+		margin-bottom: 0.6rem;
+		padding-bottom: 0.3rem;
+		border-bottom: 1px solid hsl(var(--border) / 0.7);
 	}
 	.summary-md :global(h3) {
-		font-size: 0.75rem;
+		font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Inter',
+			system-ui, sans-serif;
+		font-size: 0.95rem;
 		font-weight: 600;
-		margin-top: 0.85rem;
-		margin-bottom: 0.3rem;
+		line-height: 1.35;
+		color: hsl(var(--foreground));
+		margin-top: 1.4rem;
+		margin-bottom: 0.45rem;
+	}
+	.summary-md :global(h4) {
+		font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Inter',
+			system-ui, sans-serif;
+		font-size: 0.85rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: hsl(var(--muted-foreground));
+		margin-top: 1.1rem;
+		margin-bottom: 0.35rem;
 	}
 	.summary-md :global(p) {
-		margin: 0.4rem 0;
+		margin: 0.85rem 0;
 	}
-	.summary-md :global(ul),
+	.summary-md :global(ul) {
+		margin: 0.85rem 0;
+		padding-left: 1.5rem;
+		list-style-type: disc;
+	}
+	.summary-md :global(ul ul) {
+		list-style-type: circle;
+	}
+	.summary-md :global(ul ul ul) {
+		list-style-type: square;
+	}
 	.summary-md :global(ol) {
-		margin: 0.4rem 0;
-		padding-left: 1.1rem;
+		margin: 0.85rem 0;
+		padding-left: 1.75rem;
+		list-style-type: decimal;
 	}
 	.summary-md :global(li) {
-		margin: 0.15rem 0;
+		margin: 0.35rem 0;
+		padding-left: 0.15rem;
+	}
+	.summary-md :global(li > p) {
+		margin: 0.25rem 0;
+	}
+	.summary-md :global(li::marker) {
+		color: hsl(var(--muted-foreground));
 	}
 	.summary-md :global(strong) {
 		color: hsl(var(--foreground));
 		font-weight: 600;
 	}
+	.summary-md :global(em) {
+		font-style: italic;
+	}
 	.summary-md :global(code) {
-		font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-		background: hsl(var(--muted));
-		padding: 0.05rem 0.3rem;
+		font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, SFMono-Regular,
+			Menlo, Consolas, monospace;
+		background: hsl(var(--muted) / 0.7);
+		padding: 0.08em 0.35em;
 		border-radius: 3px;
 		font-size: 0.85em;
+		font-feature-settings: normal;
 	}
 	.summary-md :global(pre) {
-		background: hsl(var(--muted));
+		background: hsl(var(--muted) / 0.6);
 		border: 1px solid hsl(var(--border));
-		border-radius: 4px;
-		padding: 0.5rem 0.75rem;
+		border-radius: 6px;
+		padding: 0.85rem 1rem;
 		overflow-x: auto;
-		margin: 0.5rem 0;
+		margin: 1rem 0;
+		line-height: 1.55;
 	}
 	.summary-md :global(pre code) {
 		background: transparent;
 		padding: 0;
+		font-size: 0.85em;
 	}
 	.summary-md :global(blockquote) {
-		border-left: 2px solid hsl(var(--border));
-		padding-left: 0.75rem;
-		margin: 0.5rem 0;
+		border-left: 3px solid hsl(var(--accent) / 0.6);
+		padding: 0.1rem 0 0.1rem 1rem;
+		margin: 1rem 0;
 		color: hsl(var(--muted-foreground));
+		font-style: italic;
 	}
 	.summary-md :global(table) {
 		border-collapse: collapse;
-		margin: 0.5rem 0;
+		margin: 1rem 0;
 		font-size: 0.95em;
+		width: 100%;
 	}
 	.summary-md :global(th),
 	.summary-md :global(td) {
 		border: 1px solid hsl(var(--border));
-		padding: 0.3rem 0.5rem;
+		padding: 0.45rem 0.65rem;
 		text-align: left;
+		vertical-align: top;
 	}
 	.summary-md :global(th) {
-		background: hsl(var(--muted));
+		background: hsl(var(--muted) / 0.7);
 		font-weight: 600;
+		font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Inter',
+			system-ui, sans-serif;
+		font-size: 0.9em;
 	}
 	.summary-md :global(hr) {
 		border: 0;
 		border-top: 1px solid hsl(var(--border));
-		margin: 0.85rem 0;
+		margin: 1.5rem 0;
 	}
 	.summary-md :global(a) {
 		color: hsl(var(--accent));
 		text-decoration: underline;
-		text-underline-offset: 2px;
+		text-decoration-thickness: 1px;
+		text-underline-offset: 3px;
+	}
+	.summary-md :global(a:hover) {
+		text-decoration-thickness: 2px;
+	}
+
+	/* KaTeX: give display math room to breathe and align it visually with prose. */
+	.summary-md :global(.katex) {
+		font-size: 1.02em;
+	}
+	.summary-md :global(.katex-display) {
+		margin: 1.1rem 0;
+		padding: 0.25rem 0;
+		overflow-x: auto;
+		overflow-y: hidden;
+	}
+	.summary-md :global(.katex-display > .katex) {
+		font-size: 1.05em;
 	}
 </style>

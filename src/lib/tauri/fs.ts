@@ -10,7 +10,7 @@ import {
 	writeTextFile
 } from '@tauri-apps/plugin-fs';
 import { join } from '@tauri-apps/api/path';
-import type { ChatMessage, Paper, Thread } from '$lib/types';
+import type { ChatMessage, ChatSummary, Paper, Thread } from '$lib/types';
 import { loadConfig } from './config';
 
 const INBOX_SLUG = 'inbox';
@@ -215,11 +215,56 @@ export async function removeThreadFolder(slug: string): Promise<void> {
 
 // --- Chat history ---
 
-export async function readPaperChat(
+export async function paperChatsDir(threadSlug: string, arxivId: string): Promise<string> {
+	return join(await paperDir(threadSlug, arxivId), 'chats');
+}
+
+/** Sortable timestamp-based id, e.g. 2026-05-03T15-10-50-123Z. */
+export function newPaperChatId(): string {
+	return new Date().toISOString().replace(/[:.]/g, '-');
+}
+
+const CHAT_TITLE_MAX = 60;
+
+function deriveTitle(firstMsg: ChatMessage | null): string {
+	if (!firstMsg) return 'New chat';
+	const text = firstMsg.content.trim().replace(/\s+/g, ' ');
+	if (!text) return 'New chat';
+	return text.length > CHAT_TITLE_MAX ? text.slice(0, CHAT_TITLE_MAX) + '…' : text;
+}
+
+export async function listPaperChats(
 	threadSlug: string,
 	arxivId: string
+): Promise<ChatSummary[]> {
+	const dir = await paperChatsDir(threadSlug, arxivId);
+	if (!(await exists(dir))) return [];
+	const entries = await readDir(dir);
+	const summaries: ChatSummary[] = [];
+	for (const e of entries) {
+		if (!e.isFile || !e.name.endsWith('.jsonl')) continue;
+		const id = e.name.slice(0, -'.jsonl'.length);
+		const path = await join(dir, e.name);
+		const msgs = parseJsonl(await readTextFile(path));
+		const first = msgs[0] ?? null;
+		const last = msgs[msgs.length - 1] ?? null;
+		summaries.push({
+			id,
+			title: deriveTitle(first),
+			updatedAt: last?.createdAt ?? first?.createdAt ?? id,
+			messageCount: msgs.length
+		});
+	}
+	summaries.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+	return summaries;
+}
+
+export async function readPaperChat(
+	threadSlug: string,
+	arxivId: string,
+	chatId: string
 ): Promise<ChatMessage[]> {
-	const path = await join(await paperDir(threadSlug, arxivId), 'chat.jsonl');
+	const path = await join(await paperChatsDir(threadSlug, arxivId), `${chatId}.jsonl`);
 	if (!(await exists(path))) return [];
 	return parseJsonl(await readTextFile(path));
 }
@@ -227,11 +272,12 @@ export async function readPaperChat(
 export async function appendPaperChat(
 	threadSlug: string,
 	arxivId: string,
+	chatId: string,
 	msg: ChatMessage
 ): Promise<void> {
-	const dir = await paperDir(threadSlug, arxivId);
+	const dir = await paperChatsDir(threadSlug, arxivId);
 	if (!(await exists(dir))) await mkdir(dir, { recursive: true });
-	const path = await join(dir, 'chat.jsonl');
+	const path = await join(dir, `${chatId}.jsonl`);
 	const prev = (await exists(path)) ? await readTextFile(path) : '';
 	await writeTextFile(path, prev + JSON.stringify(msg) + '\n');
 }

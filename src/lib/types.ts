@@ -48,13 +48,24 @@ export interface Note {
 }
 
 /**
- * One chat per paper, one chat per thread. Messages live in chat.jsonl on disk,
- * not in the SQLite cache.
+ * Chat messages live as JSONL on disk, not in the SQLite cache.
+ *
+ * - Per-paper chats: multiple sessions, one .jsonl file each, under
+ *   papers/{arxivId}/chats/{chatId}.jsonl.
+ * - Per-thread chat: still a single chat.jsonl per thread.
  */
 export interface ChatMessage {
 	role: 'user' | 'assistant';
 	content: string;
 	createdAt: string;
+}
+
+/** Lightweight summary of a per-paper chat session, derived from its .jsonl file. */
+export interface ChatSummary {
+	id: string;
+	title: string;
+	updatedAt: string;
+	messageCount: number;
 }
 
 export interface ReosConfig {
