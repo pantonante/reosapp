@@ -1,5 +1,5 @@
 export type ReadingStatus = 'unread' | 'reading' | 'read' | 'archived';
-export type ThreadStatus = 'active' | 'paused' | 'concluded';
+export type ThreadStatus = 'active' | 'paused' | 'concluded' | 'archived';
 
 export interface Paper {
 	id: string;

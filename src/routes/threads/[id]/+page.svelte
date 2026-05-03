@@ -4,7 +4,7 @@
 	import { papers, threads, ui } from '$lib/stores.svelte';
 	import { Button, Badge } from '$lib/components/ui';
 	import { goto } from '$app/navigation';
-	import { Plus, Trash2 } from 'lucide-svelte';
+	import { Plus, Trash2, Archive, ArchiveRestore } from 'lucide-svelte';
 	import type { ReadingStatus, ThreadStatus } from '$lib/types';
 	import PaperCard from '$lib/components/PaperCard.svelte';
 
@@ -94,7 +94,29 @@
 						<option value="active">Active</option>
 						<option value="paused">Paused</option>
 						<option value="concluded">Concluded</option>
+						<option value="archived">Archived</option>
 					</select>
+					{#if thread.status === 'archived'}
+						<Button
+							variant="ghost"
+							size="icon"
+							onclick={() => setStatus('active')}
+							aria-label="Unarchive thread"
+							title="Unarchive"
+						>
+							<ArchiveRestore class="h-4 w-4" />
+						</Button>
+					{:else}
+						<Button
+							variant="ghost"
+							size="icon"
+							onclick={() => setStatus('archived')}
+							aria-label="Archive thread"
+							title="Archive"
+						>
+							<Archive class="h-4 w-4" />
+						</Button>
+					{/if}
 					<Button variant="ghost" size="icon" onclick={deleteThread} aria-label="Delete thread">
 						<Trash2 class="h-4 w-4" />
 					</Button>

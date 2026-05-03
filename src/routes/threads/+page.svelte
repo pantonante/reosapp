@@ -11,8 +11,10 @@
 		{ status: 'concluded', label: 'Concluded' }
 	];
 
+	const visibleThreads = $derived(threads.items.filter((t) => t.status !== 'archived'));
+
 	function byStatus(status: ThreadStatus): Thread[] {
-		return threads.items.filter((t) => t.status === status);
+		return visibleThreads.filter((t) => t.status === status);
 	}
 
 	function open(t: Thread) {
@@ -26,7 +28,7 @@
 		<div>
 			<h1 class="font-mono text-2xl font-light tracking-tight">Threads</h1>
 			<p class="mt-1 text-sm text-muted-foreground">
-				{threads.items.length} threads
+				{visibleThreads.length} threads
 			</p>
 		</div>
 		<div class="flex items-center gap-2">
@@ -57,7 +59,7 @@
 
 	{#if ui.threadsCompact}
 		<div class="grid gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-			{#each threads.items as t (t.id)}
+			{#each visibleThreads as t (t.id)}
 				<button
 					class="rounded-md border border-border/60 bg-card p-2 text-left transition-colors hover:border-border hover:bg-card/80"
 					onclick={() => open(t)}
@@ -99,7 +101,7 @@
 		</div>
 	{/if}
 
-	{#if threads.items.length === 0}
+	{#if visibleThreads.length === 0}
 		<div class="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/60 py-20 text-center text-sm text-muted-foreground">
 			<p>No threads yet.</p>
 			<Button class="mt-4" onclick={() => (ui.newThreadOpen = true)}>

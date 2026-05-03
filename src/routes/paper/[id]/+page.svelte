@@ -37,12 +37,14 @@
 		const q = moveQuery.trim().toLowerCase();
 		const all: MoveOption[] = [
 			{ id: 'inbox', label: 'Inbox', question: 'Untriaged papers', isInbox: true },
-			...threads.items.map((t) => ({
-				id: t.id,
-				label: t.title || '(untitled thread)',
-				question: t.question ?? '',
-				isInbox: false
-			}))
+			...threads.items
+				.filter((t) => t.status !== 'archived')
+				.map((t) => ({
+					id: t.id,
+					label: t.title || '(untitled thread)',
+					question: t.question ?? '',
+					isInbox: false
+				}))
 		];
 		if (!q) return all;
 		return all.filter(

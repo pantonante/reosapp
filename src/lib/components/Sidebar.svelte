@@ -2,14 +2,15 @@
 	import { page } from '$app/state';
 	import { ui } from '$lib/stores.svelte';
 	import { cn } from '$lib/utils/cn';
-	import { Inbox, Library, Layers, Settings, Search, ChevronLeft, ChevronRight } from 'lucide-svelte';
+	import { Inbox, Library, Layers, Archive, Settings, Search, ChevronLeft, ChevronRight } from 'lucide-svelte';
 
 	type NavItem = { href: string; label: string; icon: typeof Inbox; match: (p: string) => boolean };
 
 	const items: NavItem[] = [
 		{ href: '/', label: 'Inbox', icon: Inbox, match: (p) => p === '/' },
+		{ href: '/threads', label: 'Threads', icon: Layers, match: (p) => p.startsWith('/threads') },
 		{ href: '/library', label: 'Library', icon: Library, match: (p) => p.startsWith('/library') },
-		{ href: '/threads', label: 'Threads', icon: Layers, match: (p) => p.startsWith('/threads') }
+		{ href: '/archive', label: 'Archive', icon: Archive, match: (p) => p.startsWith('/archive') }
 	];
 </script>
 
