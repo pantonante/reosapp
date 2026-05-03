@@ -1,0 +1,37 @@
+[package]
+name = "reos-standalone"
+version = "0.1.0"
+description = "Re:OS — personal research operating system (desktop)"
+authors = ["Pasquale Antonante"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "reos_standalone_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-sql = { version = "2", features = ["sqlite"] }
+tauri-plugin-fs = "2"
+tauri-plugin-http = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "2"
+dirs = "5"
+walkdir = "2"
+chrono = { version = "0.4", features = ["serde"] }
+tokio = { version = "1", features = ["process", "io-util", "rt-multi-thread", "macros", "sync"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]

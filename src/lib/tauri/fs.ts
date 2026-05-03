@@ -1,0 +1,252 @@
+import {
+	BaseDirectory,
+	exists,
+	mkdir,
+	readDir,
+	readTextFile,
+	remove,
+	writeFile,
+	writeTextFile
+} from '@tauri-apps/plugin-fs';
+import { join } from '@tauri-apps/api/path';
+import type { ChatMessage, Paper, Thread } from '$lib/types';
+import { loadConfig } from './config';
+
+const INBOX_SLUG = 'inbox';
+
+async function papersRoot(): Promise<string> {
+	const cfg = await loadConfig();
+	if (!cfg.papersDir) throw new Error('Papers folder not configured');
+	return cfg.papersDir;
+}
+
+export function slugify(input: string): string {
+	return input
+		.toLowerCase()
+		.replace(/[^a-z0-9-_]+/g, '-')
+		.replace(/^-+|-+$/g, '')
+		.slice(0, 60) || 'thread';
+}
+
+export async function ensureRootLayout(): Promise<void> {
+	const root = await papersRoot();
+	const threadsDir = await join(root, 'threads');
+	if (!(await exists(threadsDir))) await mkdir(threadsDir, { recursive: true });
+	const inbox = await join(threadsDir, INBOX_SLUG);
+	if (!(await exists(inbox))) {
+		await mkdir(inbox, { recursive: true });
+		await mkdir(await join(inbox, 'papers'), { recursive: true });
+		await writeTextFile(
+			await join(inbox, 'meta.json'),
+			JSON.stringify(
+				{
+					id: 'inbox',
+					title: 'Inbox',
+					question: '',
+					status: 'active',
+					createdAt: new Date().toISOString(),
+					updatedAt: new Date().toISOString()
+				},
+				null,
+				2
+			)
+		);
+	}
+}
+
+export async function threadDir(slug: string): Promise<string> {
+	const root = await papersRoot();
+	return join(root, 'threads', slug);
+}
+
+export async function paperDir(threadSlug: string, arxivId: string): Promise<string> {
+	const tdir = await threadDir(threadSlug);
+	return join(tdir, 'papers', arxivId);
+}
+
+// --- Thread meta ---
+
+type StoredThread = Omit<Thread, 'papers'>;
+
+export async function readThreadMeta(slug: string): Promise<StoredThread | null> {
+	const path = await join(await threadDir(slug), 'meta.json');
+	if (!(await exists(path))) return null;
+	const raw = await readTextFile(path);
+	return JSON.parse(raw) as StoredThread;
+}
+
+export async function writeThreadMeta(slug: string, t: Thread): Promise<void> {
+	const dir = await threadDir(slug);
+	if (!(await exists(dir))) await mkdir(dir, { recursive: true });
+	const papersDir = await join(dir, 'papers');
+	if (!(await exists(papersDir))) await mkdir(papersDir, { recursive: true });
+	const meta: StoredThread = {
+		id: t.id,
+		title: t.title,
+		question: t.question,
+		status: t.status,
+		createdAt: t.createdAt,
+		updatedAt: t.updatedAt
+	};
+	await writeTextFile(await join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
+}
+
+// --- Paper meta + PDF + notes ---
+
+type StoredPaper = Omit<Paper, 'threadId' | 'pdfPath'>;
+
+export async function readPaperMeta(threadSlug: string, arxivId: string): Promise<StoredPaper | null> {
+	const path = await join(await paperDir(threadSlug, arxivId), 'meta.json');
+	if (!(await exists(path))) return null;
+	const raw = await readTextFile(path);
+	return JSON.parse(raw) as StoredPaper;
+}
+
+export async function writePaperMeta(threadSlug: string, p: Paper): Promise<void> {
+	const dir = await paperDir(threadSlug, p.arxivId);
+	if (!(await exists(dir))) await mkdir(dir, { recursive: true });
+	const meta: StoredPaper = {
+		id: p.id,
+		arxivId: p.arxivId,
+		title: p.title,
+		authors: p.authors,
+		abstract: p.abstract,
+		publishedDate: p.publishedDate,
+		categories: p.categories,
+		tags: p.tags,
+		readingStatus: p.readingStatus,
+		rating: p.rating,
+		arxivUrl: p.arxivUrl,
+		addedAt: p.addedAt,
+		links: p.links,
+		orderInThread: p.orderInThread,
+		contextNote: p.contextNote
+	};
+	await writeTextFile(await join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
+}
+
+export async function writePaperPdf(
+	threadSlug: string,
+	arxivId: string,
+	bytes: Uint8Array
+): Promise<string> {
+	const dir = await paperDir(threadSlug, arxivId);
+	if (!(await exists(dir))) await mkdir(dir, { recursive: true });
+	const pdfPath = await join(dir, 'paper.pdf');
+	await writeFile(pdfPath, bytes);
+	return pdfPath;
+}
+
+export async function paperPdfPath(threadSlug: string, arxivId: string): Promise<string> {
+	return join(await paperDir(threadSlug, arxivId), 'paper.pdf');
+}
+
+export async function readNotes(threadSlug: string, arxivId: string): Promise<string> {
+	const path = await join(await paperDir(threadSlug, arxivId), 'notes.md');
+	if (!(await exists(path))) return '';
+	return await readTextFile(path);
+}
+
+export async function writeNotes(
+	threadSlug: string,
+	arxivId: string,
+	content: string
+): Promise<void> {
+	const dir = await paperDir(threadSlug, arxivId);
+	if (!(await exists(dir))) await mkdir(dir, { recursive: true });
+	await writeTextFile(await join(dir, 'notes.md'), content);
+}
+
+export async function paperSummaryPath(threadSlug: string, arxivId: string): Promise<string> {
+	return join(await paperDir(threadSlug, arxivId), 'summary.md');
+}
+
+export async function readPaperSummary(
+	threadSlug: string,
+	arxivId: string
+): Promise<string | null> {
+	const path = await paperSummaryPath(threadSlug, arxivId);
+	if (!(await exists(path))) return null;
+	return await readTextFile(path);
+}
+
+export async function removePaperFolder(threadSlug: string, arxivId: string): Promise<void> {
+	const dir = await paperDir(threadSlug, arxivId);
+	if (await exists(dir)) await remove(dir, { recursive: true });
+}
+
+export async function removeThreadFolder(slug: string): Promise<void> {
+	if (slug === INBOX_SLUG) return; // never remove inbox
+	const dir = await threadDir(slug);
+	if (await exists(dir)) await remove(dir, { recursive: true });
+}
+
+// --- Chat history ---
+
+export async function readPaperChat(
+	threadSlug: string,
+	arxivId: string
+): Promise<ChatMessage[]> {
+	const path = await join(await paperDir(threadSlug, arxivId), 'chat.jsonl');
+	if (!(await exists(path))) return [];
+	return parseJsonl(await readTextFile(path));
+}
+
+export async function appendPaperChat(
+	threadSlug: string,
+	arxivId: string,
+	msg: ChatMessage
+): Promise<void> {
+	const dir = await paperDir(threadSlug, arxivId);
+	if (!(await exists(dir))) await mkdir(dir, { recursive: true });
+	const path = await join(dir, 'chat.jsonl');
+	const prev = (await exists(path)) ? await readTextFile(path) : '';
+	await writeTextFile(path, prev + JSON.stringify(msg) + '\n');
+}
+
+export async function readThreadChat(threadSlug: string): Promise<ChatMessage[]> {
+	const path = await join(await threadDir(threadSlug), 'chat.jsonl');
+	if (!(await exists(path))) return [];
+	return parseJsonl(await readTextFile(path));
+}
+
+export async function appendThreadChat(threadSlug: string, msg: ChatMessage): Promise<void> {
+	const dir = await threadDir(threadSlug);
+	if (!(await exists(dir))) await mkdir(dir, { recursive: true });
+	const path = await join(dir, 'chat.jsonl');
+	const prev = (await exists(path)) ? await readTextFile(path) : '';
+	await writeTextFile(path, prev + JSON.stringify(msg) + '\n');
+}
+
+function parseJsonl(text: string): ChatMessage[] {
+	const out: ChatMessage[] = [];
+	for (const line of text.split('\n')) {
+		const trim = line.trim();
+		if (!trim) continue;
+		try {
+			out.push(JSON.parse(trim) as ChatMessage);
+		} catch {
+			// skip malformed lines
+		}
+	}
+	return out;
+}
+
+// --- Scan helpers (for cache rebuild) ---
+
+export async function listThreadSlugs(): Promise<string[]> {
+	const root = await papersRoot();
+	const threadsDir = await join(root, 'threads');
+	if (!(await exists(threadsDir))) return [];
+	const entries = await readDir(threadsDir);
+	return entries.filter((e) => e.isDirectory).map((e) => e.name);
+}
+
+export async function listPaperArxivIds(threadSlug: string): Promise<string[]> {
+	const papersFolder = await join(await threadDir(threadSlug), 'papers');
+	if (!(await exists(papersFolder))) return [];
+	const entries = await readDir(papersFolder);
+	return entries.filter((e) => e.isDirectory).map((e) => e.name);
+}
+
+export { INBOX_SLUG, BaseDirectory };
