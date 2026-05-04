@@ -44,9 +44,9 @@
 
 <DialogPrimitive.Root bind:open={ui.commandPaletteOpen}>
 	<DialogPrimitive.Portal>
-		<DialogPrimitive.Overlay class="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" />
+		<DialogPrimitive.Overlay class="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm" />
 		<DialogPrimitive.Content
-			class="fixed left-1/2 top-[20vh] z-50 w-full max-w-xl -translate-x-1/2 overflow-hidden rounded-lg border border-border/60 bg-card shadow-2xl"
+			class="panel fixed left-1/2 top-[20vh] z-50 w-full max-w-xl -translate-x-1/2 overflow-hidden"
 		>
 			<Command.Root label="Command palette" class="w-full">
 				<Command.Input
@@ -69,7 +69,7 @@
 								<Command.Item
 									value={`nav:${action.label}`}
 									onSelect={() => run(action.run)}
-									class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-foreground data-[selected]:bg-accent/15 data-[selected]:text-accent"
+									class="flex cursor-pointer items-center gap-2 rounded-[8px] px-2 py-1.5 text-sm text-foreground data-[selected]:bg-secondary data-[selected]:text-foreground"
 								>
 									<Icon class="h-3.5 w-3.5" />
 									{action.label}
@@ -88,7 +88,7 @@
 								<Command.Item
 									value={`cmd:${action.label}`}
 									onSelect={() => run(action.run)}
-									class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-foreground data-[selected]:bg-accent/15 data-[selected]:text-accent"
+									class="flex cursor-pointer items-center gap-2 rounded-[8px] px-2 py-1.5 text-sm text-foreground data-[selected]:bg-secondary data-[selected]:text-foreground"
 								>
 									<Icon class="h-3.5 w-3.5" />
 									{action.label}

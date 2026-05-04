@@ -20,7 +20,7 @@
 	}
 </script>
 
-<div class="space-y-10 p-4 sm:p-8">
+<div class="space-y-10 p-6 sm:p-8">
 	<header class="flex flex-wrap items-end justify-between gap-3">
 		<div class="min-w-0">
 			<h1 class="font-mono text-2xl font-light tracking-tight">Inbox</h1>
@@ -48,7 +48,7 @@
 	{/if}
 
 	{#if unfiled.length > 0}
-		<section class="border-l-2 border-accent/60 pl-4">
+		<section>
 			<div class="mb-3 flex items-baseline justify-between">
 				<h2 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
 					Unfiled
@@ -65,7 +65,7 @@
 			</div>
 		</section>
 	{:else}
-		<div class="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/60 py-20 text-center text-sm text-muted-foreground">
+		<div class="flex flex-col items-center justify-center rounded-[12px] border border-dashed border-border/60 py-20 text-center text-sm text-muted-foreground">
 			<p>{papers.items.length === 0 ? 'No papers yet.' : 'No unfiled papers — every paper is in a thread.'}</p>
 			<Button class="mt-4" onclick={() => (ui.addPaperOpen = true)}>
 				<Plus class="h-4 w-4" />

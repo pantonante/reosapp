@@ -194,7 +194,7 @@
 />
 
 {#if tabs.length > 0}
-	<div class="flex h-9 items-stretch overflow-x-auto border-b border-border/60 bg-card">
+	<div class="flex h-10 items-center gap-1 overflow-x-auto border-b border-border/60 px-2">
 		{#each tabs as tab (tab.kind + tab.id)}
 			{@const active = isActive(tab)}
 			{@const key = tabKey(tab)}
@@ -206,10 +206,10 @@
 				aria-selected={active}
 				draggable="true"
 				class={cn(
-					'group relative flex cursor-pointer select-none items-center gap-2 border-r border-border/60 px-3 text-xs transition-colors',
+					'group relative flex h-7 cursor-pointer select-none items-center gap-2 rounded-[8px] border border-transparent px-2.5 text-xs transition-colors',
 					active
-						? 'bg-background text-foreground'
-						: 'text-muted-foreground hover:bg-background/50 hover:text-foreground',
+						? 'border-border/70 bg-secondary text-foreground'
+						: 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground',
 					draggingKey === key && 'opacity-40'
 				)}
 				style="-webkit-user-drag: element;"
@@ -246,7 +246,7 @@
 				<span class="max-w-[16ch] truncate">{tab.title}</span>
 				<button
 					type="button"
-					class="rounded-sm p-0.5 opacity-0 transition-opacity hover:bg-accent/15 group-hover:opacity-100"
+					class="rounded-sm p-0.5 opacity-0 transition-opacity hover:bg-foreground/10 group-hover:opacity-100"
 					onclick={(e) => {
 						e.stopPropagation();
 						e.preventDefault();
@@ -271,7 +271,7 @@
 	<div
 		role="menu"
 		tabindex="-1"
-		class="fixed z-50 min-w-[180px] overflow-hidden rounded-md border border-border/60 bg-popover py-1 text-xs text-popover-foreground shadow-lg"
+		class="panel fixed z-50 min-w-[180px] overflow-hidden py-1 text-xs text-popover-foreground"
 		style="left: {m.x}px; top: {m.y}px;"
 		onclick={(e) => e.stopPropagation()}
 		oncontextmenu={(e) => e.preventDefault()}
@@ -279,7 +279,7 @@
 	>
 		<button
 			type="button"
-			class="block w-full px-3 py-1.5 text-left hover:bg-accent/15 disabled:opacity-40 disabled:hover:bg-transparent"
+			class="block w-full px-3 py-1.5 text-left hover:bg-secondary disabled:opacity-40 disabled:hover:bg-transparent"
 			onclick={() => {
 				close(m.tab, new MouseEvent('click'));
 				closeMenu();
@@ -289,7 +289,7 @@
 		</button>
 		<button
 			type="button"
-			class="block w-full px-3 py-1.5 text-left hover:bg-accent/15 disabled:opacity-40 disabled:hover:bg-transparent"
+			class="block w-full px-3 py-1.5 text-left hover:bg-secondary disabled:opacity-40 disabled:hover:bg-transparent"
 			disabled={!hasOthers(m.tab)}
 			onclick={() => doCloseOthers(m.tab)}
 		>
@@ -297,7 +297,7 @@
 		</button>
 		<button
 			type="button"
-			class="block w-full px-3 py-1.5 text-left hover:bg-accent/15 disabled:opacity-40 disabled:hover:bg-transparent"
+			class="block w-full px-3 py-1.5 text-left hover:bg-secondary disabled:opacity-40 disabled:hover:bg-transparent"
 			disabled={!hasRight(m.tab)}
 			onclick={() => doCloseToRight(m.tab)}
 		>

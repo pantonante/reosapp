@@ -133,7 +133,7 @@
 </script>
 
 <div class="flex h-full flex-col">
-	<div class="flex h-10 items-center justify-between border-b border-border/60 bg-card px-3">
+	<div class="flex h-10 items-center justify-between border-b border-border/60 px-3">
 		<div class="flex items-center gap-1">
 			<Button variant="ghost" size="icon" onclick={prevPage} disabled={currentPage <= 1}>
 				<ChevronLeft class="h-4 w-4" />

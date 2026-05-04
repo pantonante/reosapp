@@ -25,7 +25,7 @@
 	const stars = $derived(paper.rating ?? 0);
 </script>
 
-<Card class={cn('p-4 transition-all hover:border-border', onclick && 'cursor-pointer hover:bg-card/80')}>
+<Card class={cn('p-4 transition-colors hover:border-border', onclick && 'cursor-pointer hover:bg-secondary/40')}>
 	{#if onclick}
 		<button class="w-full text-left" {onclick}>
 			{@render body()}

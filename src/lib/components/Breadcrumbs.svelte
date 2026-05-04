@@ -55,7 +55,7 @@
 </script>
 
 <nav
-	class="flex h-8 flex-shrink-0 items-center gap-1.5 border-b border-border/60 bg-background/40 px-4 font-mono text-xs"
+	class="flex h-8 flex-shrink-0 items-center gap-1.5 border-b border-border/60 px-5 font-mono text-xs"
 	aria-label="Breadcrumb"
 >
 	{#each crumbs as c, i (i)}

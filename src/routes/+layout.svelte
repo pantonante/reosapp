@@ -33,21 +33,10 @@
 	<FirstRunWizard />
 {:else}
 	<div class="flex h-screen w-full flex-col overflow-hidden">
-		<header
-			class="flex h-7 shrink-0 items-center bg-card pl-20 pr-2"
-			data-tauri-drag-region
-		>
-			<a
-				href="/"
-				class="font-mono text-sm tracking-tight"
-				data-tauri-drag-region="false"
-			>
-				<span class="text-accent">Re:</span><span>OS</span>
-			</a>
-		</header>
-		<div class="flex min-h-0 flex-1">
+		<div class="h-7 shrink-0" data-tauri-drag-region></div>
+		<div class="flex min-h-0 flex-1 gap-2 px-2 pb-2">
 			<Sidebar />
-			<div class="flex min-w-0 flex-1 flex-col">
+			<div class="panel flex min-w-0 flex-1 flex-col overflow-hidden">
 				{#if !ui.pdfFullscreen}
 					<PaperTabs />
 					<Breadcrumbs />

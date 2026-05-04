@@ -8,11 +8,6 @@
 	}: { class?: string; children?: Snippet } = $props();
 </script>
 
-<div
-	class={cn(
-		'rounded-lg border border-border/60 bg-card text-card-foreground shadow-sm',
-		className
-	)}
->
+<div class={cn('panel text-card-foreground', className)}>
 	{@render children?.()}
 </div>

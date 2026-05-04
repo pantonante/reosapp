@@ -4,36 +4,40 @@
 
 @layer base {
 	:root {
-		--background: 220 14% 6%;
+		--background: 222 24% 4%;
 		--foreground: 210 17% 92%;
 
-		--muted: 220 10% 14%;
-		--muted-foreground: 215 14% 60%;
+		--muted: 222 14% 11%;
+		--muted-foreground: 220 10% 56%;
 
-		--popover: 220 14% 8%;
+		--popover: 222 16% 9%;
 		--popover-foreground: 210 17% 92%;
 
-		--card: 220 13% 9%;
+		--card: 222 16% 8%;
 		--card-foreground: 210 17% 92%;
 
-		--border: 220 10% 16%;
-		--input: 220 10% 16%;
+		--border: 220 12% 18%;
+		--input: 220 12% 16%;
 
 		--primary: 210 17% 92%;
-		--primary-foreground: 220 14% 6%;
+		--primary-foreground: 222 24% 4%;
 
-		--secondary: 220 10% 14%;
+		--secondary: 222 14% 12%;
 		--secondary-foreground: 210 17% 92%;
 
-		--accent: 210 100% 60%;
-		--accent-foreground: 220 14% 6%;
+		--accent: 210 80% 62%;
+		--accent-foreground: 222 24% 4%;
 
-		--destructive: 0 75% 60%;
+		--destructive: 0 70% 60%;
 		--destructive-foreground: 210 17% 92%;
 
-		--ring: 210 100% 60%;
+		--ring: 210 80% 62%;
 
-		--radius: 0.5rem;
+		--radius: 0.625rem;
+
+		--panel: 222 16% 8%;
+		--panel-highlight: 220 18% 22%;
+		--radius-panel: 1rem;
 	}
 
 	.dark {
@@ -55,5 +59,27 @@
 
 	body {
 		font-feature-settings: 'cv11', 'ss01';
+		background:
+			radial-gradient(1200px 800px at 0% 0%, hsl(220 30% 8%) 0%, transparent 60%),
+			radial-gradient(1000px 700px at 100% 100%, hsl(220 30% 6%) 0%, transparent 55%),
+			hsl(var(--background));
+	}
+}
+
+@layer components {
+	.panel {
+		@apply rounded-[var(--radius-panel)] border border-border/70 bg-card;
+		box-shadow:
+			inset 0 1px 0 0 hsl(var(--panel-highlight) / 0.6),
+			0 8px 24px -12px rgb(0 0 0 / 0.6);
+	}
+
+	.rail-btn {
+		@apply flex h-9 w-9 items-center justify-center rounded-[10px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground;
+	}
+
+	.rail-btn-active {
+		@apply border border-border/80 bg-secondary text-foreground;
+		box-shadow: inset 0 1px 0 0 hsl(var(--panel-highlight) / 0.5);
 	}
 }

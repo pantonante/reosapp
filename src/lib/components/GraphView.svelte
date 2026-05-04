@@ -373,7 +373,7 @@
 </script>
 
 <div class="flex h-full min-h-0 flex-col">
-	<div class="flex flex-wrap items-center gap-2 border-b border-border/60 bg-card/40 px-3 py-2">
+	<div class="flex flex-wrap items-center gap-2 border-b border-border/60 px-3 py-2">
 		<div class="relative">
 			<Search class="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
 			<Input
@@ -384,7 +384,7 @@
 		</div>
 
 		<select
-			class="h-8 rounded-md border border-input bg-background px-2 text-xs"
+			class="h-8 rounded-[10px] border border-border/70 bg-muted/60 px-2 text-xs"
 			bind:value={domainFilter}
 		>
 			<option value="all">All domains</option>
@@ -394,7 +394,7 @@
 		</select>
 
 		<select
-			class="h-8 rounded-md border border-input bg-background px-2 text-xs"
+			class="h-8 rounded-[10px] border border-border/70 bg-muted/60 px-2 text-xs"
 			bind:value={topicFilter}
 		>
 			<option value="all">All topics</option>
@@ -408,7 +408,7 @@
 			<div class="flex rounded-md border border-border/60 p-0.5">
 				<button
 					class="rounded px-2 py-0.5 text-[11px] transition-colors {colorMode === 'domain'
-						? 'bg-accent/20 text-accent'
+						? 'bg-secondary text-foreground'
 						: 'text-muted-foreground hover:text-foreground'}"
 					onclick={() => (colorMode = 'domain')}
 				>
@@ -416,7 +416,7 @@
 				</button>
 				<button
 					class="rounded px-2 py-0.5 text-[11px] transition-colors {colorMode === 'topic'
-						? 'bg-accent/20 text-accent'
+						? 'bg-secondary text-foreground'
 						: 'text-muted-foreground hover:text-foreground'}"
 					onclick={() => (colorMode = 'topic')}
 				>
@@ -452,7 +452,7 @@
 	</div>
 
 	<div class="relative min-h-0 flex-1">
-		<div bind:this={container} class="h-full w-full bg-background"></div>
+		<div bind:this={container} class="h-full w-full"></div>
 
 		{#if graph.nodes.length === 0}
 			<div class="absolute inset-0 flex items-center justify-center">
@@ -468,7 +468,7 @@
 		{/if}
 
 		{#if legend.length > 0}
-			<div class="pointer-events-none absolute bottom-3 left-3 max-w-xs rounded-md border border-border/60 bg-card/85 p-2 backdrop-blur">
+			<div class="panel pointer-events-none absolute bottom-3 left-3 max-w-xs p-2 backdrop-blur">
 				<div class="text-[10px] uppercase tracking-wider text-muted-foreground">
 					{colorMode === 'domain' ? 'Domains' : 'Topics'}
 				</div>
