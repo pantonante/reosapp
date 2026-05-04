@@ -282,16 +282,56 @@ export async function appendPaperChat(
 	await writeTextFile(path, prev + JSON.stringify(msg) + '\n');
 }
 
-export async function readThreadChat(threadSlug: string): Promise<ChatMessage[]> {
-	const path = await join(await threadDir(threadSlug), 'chat.jsonl');
+// --- Thread-level chats (multi-chat, mirrors paper chats) ---
+
+export async function threadChatsDir(threadSlug: string): Promise<string> {
+	return join(await threadDir(threadSlug), 'chats');
+}
+
+export function newThreadChatId(): string {
+	return new Date().toISOString().replace(/[:.]/g, '-');
+}
+
+export async function listThreadChats(threadSlug: string): Promise<ChatSummary[]> {
+	const dir = await threadChatsDir(threadSlug);
+	if (!(await exists(dir))) return [];
+	const entries = await readDir(dir);
+	const summaries: ChatSummary[] = [];
+	for (const e of entries) {
+		if (!e.isFile || !e.name.endsWith('.jsonl')) continue;
+		const id = e.name.slice(0, -'.jsonl'.length);
+		const path = await join(dir, e.name);
+		const msgs = parseJsonl(await readTextFile(path));
+		const first = msgs[0] ?? null;
+		const last = msgs[msgs.length - 1] ?? null;
+		summaries.push({
+			id,
+			title: deriveTitle(first),
+			updatedAt: last?.createdAt ?? first?.createdAt ?? id,
+			messageCount: msgs.length
+		});
+	}
+	summaries.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+	return summaries;
+}
+
+export async function readThreadChat(
+	threadSlug: string,
+	chatId: string
+): Promise<ChatMessage[]> {
+	const path = await join(await threadChatsDir(threadSlug), `${chatId}.jsonl`);
 	if (!(await exists(path))) return [];
 	return parseJsonl(await readTextFile(path));
 }
 
-export async function appendThreadChat(threadSlug: string, msg: ChatMessage): Promise<void> {
-	const dir = await threadDir(threadSlug);
+export async function appendThreadChat(
+	threadSlug: string,
+	chatId: string,
+	msg: ChatMessage
+): Promise<void> {
+	const dir = await threadChatsDir(threadSlug);
 	if (!(await exists(dir))) await mkdir(dir, { recursive: true });
-	const path = await join(dir, 'chat.jsonl');
+	const path = await join(dir, `${chatId}.jsonl`);
 	const prev = (await exists(path)) ? await readTextFile(path) : '';
 	await writeTextFile(path, prev + JSON.stringify(msg) + '\n');
 }

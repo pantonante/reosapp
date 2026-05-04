@@ -4,7 +4,7 @@
 	import { papers, threads, ui } from '$lib/stores.svelte';
 	import { Button, Badge } from '$lib/components/ui';
 	import { goto } from '$app/navigation';
-	import { Plus, Trash2, Archive, ArchiveRestore } from 'lucide-svelte';
+	import { Plus, Trash2, Archive, ArchiveRestore, MessageSquare } from 'lucide-svelte';
 	import type { ReadingStatus, ThreadStatus } from '$lib/types';
 	import PaperCard from '$lib/components/PaperCard.svelte';
 
@@ -82,6 +82,10 @@
 					></textarea>
 				</div>
 				<div class="flex flex-wrap items-center gap-2">
+					<Button onclick={() => goto(`/threads/${thread.id}/chat`)}>
+						<MessageSquare class="h-4 w-4" />
+						Chat
+					</Button>
 					<Button onclick={openAddPaper}>
 						<Plus class="h-4 w-4" />
 						Add paper
@@ -157,6 +161,5 @@
 			{/each}
 		</div>
 
-		<!-- TODO: thread chat panel -->
 	</div>
 {/if}

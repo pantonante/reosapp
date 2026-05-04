@@ -4,6 +4,7 @@
 	import { config, papers, summaryMeta, threads, ui } from '$lib/stores.svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import PaperTabs from '$lib/components/PaperTabs.svelte';
+	import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import QuickOpenModal from '$lib/components/QuickOpenModal.svelte';
 	import AddPaperModal from '$lib/components/AddPaperModal.svelte';
@@ -49,6 +50,7 @@
 			<div class="flex min-w-0 flex-1 flex-col">
 				{#if !ui.pdfFullscreen}
 					<PaperTabs />
+					<Breadcrumbs />
 				{/if}
 				<main class="min-h-0 flex-1 overflow-auto">
 					{@render children?.()}
