@@ -1,7 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import { onMount } from 'svelte';
-	import { config, papers, threads, ui } from '$lib/stores.svelte';
+	import { config, papers, summaryMeta, threads, ui } from '$lib/stores.svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import PaperTabs from '$lib/components/PaperTabs.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
@@ -16,7 +16,7 @@
 	onMount(async () => {
 		await config.load();
 		if (config.value.papersDir) {
-			await Promise.all([papers.load(), threads.load()]);
+			await Promise.all([papers.load(), threads.load(), summaryMeta.load()]);
 		}
 		booting = false;
 	});

@@ -1,4 +1,4 @@
-import type { Paper, Thread, ReosConfig } from './types';
+import type { Paper, Thread, ReosConfig, SummaryMeta } from './types';
 import { db } from './tauri/db';
 import {
 	writePaperMeta,
@@ -161,6 +161,56 @@ function createThreadsStore() {
 
 export const papers = createPapersStore();
 export const threads = createThreadsStore();
+
+// --- Summary metadata store ---
+
+function createSummaryMetaStore() {
+	let items = $state<SummaryMeta[]>([]);
+	let loaded = $state(false);
+	let byId = new Map<string, SummaryMeta>();
+
+	function rebuildIndex() {
+		byId = new Map(items.map((m) => [m.paperId, m]));
+	}
+
+	return {
+		get items() {
+			return items;
+		},
+		get loaded() {
+			return loaded;
+		},
+		async load() {
+			if (loaded) return;
+			items = await db.getAllSummaryMeta();
+			rebuildIndex();
+			loaded = true;
+		},
+		async reload() {
+			items = await db.getAllSummaryMeta();
+			rebuildIndex();
+			loaded = true;
+		},
+		get(paperId: string): SummaryMeta | undefined {
+			return byId.get(paperId);
+		},
+		has(paperId: string): boolean {
+			return byId.has(paperId);
+		},
+		async set(meta: SummaryMeta) {
+			await db.setSummaryMeta(meta);
+			items = [...items.filter((m) => m.paperId !== meta.paperId), meta];
+			rebuildIndex();
+		},
+		async remove(paperId: string) {
+			await db.removeSummaryMeta(paperId);
+			items = items.filter((m) => m.paperId !== paperId);
+			rebuildIndex();
+		}
+	};
+}
+
+export const summaryMeta = createSummaryMetaStore();
 
 // --- Config store ---
 

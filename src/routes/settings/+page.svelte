@@ -1,16 +1,22 @@
 <script lang="ts">
-	import { Button, Card, Input, Separator } from '$lib/components/ui';
-	import { config, papers, threads } from '$lib/stores.svelte';
+	import { Button, Card, Input } from '$lib/components/ui';
+	import { config, papers, summaryMeta, threads } from '$lib/stores.svelte';
 	import { rebuildCache, type RebuildResult } from '$lib/tauri/rebuild';
 	import { db } from '$lib/tauri/db';
+	import { INBOX_SLUG, readPaperSummary } from '$lib/tauri/fs';
+	import { parseSummaryFrontmatter, isMetaEmpty } from '$lib/summary-meta';
 	import { open as openDialog } from '@tauri-apps/plugin-dialog';
-	import { FolderOpen, RefreshCw, Loader2 } from 'lucide-svelte';
+	import { FolderOpen, RefreshCw, Loader2, Tags } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 
 	let rebuilding = $state(false);
 	let lastResult = $state<RebuildResult | null>(null);
 	let builtAt = $state<string | null>(null);
 	let error = $state<string | null>(null);
+
+	let reindexing = $state(false);
+	let reindexResult = $state<{ scanned: number; indexed: number; cleared: number } | null>(null);
+	let reindexError = $state<string | null>(null);
 
 	onMount(async () => {
 		builtAt = await db.getMeta('builtAt');
@@ -35,10 +41,55 @@
 			builtAt = await db.getMeta('builtAt');
 			await papers.reload();
 			await threads.reload();
+			await summaryMeta.reload();
 		} catch (e) {
 			error = e instanceof Error ? e.message : String(e);
 		} finally {
 			rebuilding = false;
+		}
+	}
+
+	async function doReindexSummaryMeta() {
+		reindexing = true;
+		reindexError = null;
+		reindexResult = null;
+		let scanned = 0;
+		let indexed = 0;
+		let cleared = 0;
+		try {
+			const now = new Date().toISOString();
+			for (const p of papers.items) {
+				scanned++;
+				const text = await readPaperSummary(p.threadId ?? INBOX_SLUG, p.arxivId);
+				if (!text) {
+					if (summaryMeta.has(p.id)) {
+						await summaryMeta.remove(p.id);
+						cleared++;
+					}
+					continue;
+				}
+				const { meta } = parseSummaryFrontmatter(text);
+				if (isMetaEmpty(meta)) {
+					if (summaryMeta.has(p.id)) {
+						await summaryMeta.remove(p.id);
+						cleared++;
+					}
+					continue;
+				}
+				await summaryMeta.set({
+					paperId: p.id,
+					topics: meta!.topics,
+					domains: meta!.domains,
+					keywords: meta!.keywords,
+					updatedAt: now
+				});
+				indexed++;
+			}
+			reindexResult = { scanned, indexed, cleared };
+		} catch (e) {
+			reindexError = e instanceof Error ? e.message : String(e);
+		} finally {
+			reindexing = false;
 		}
 	}
 </script>
@@ -106,6 +157,54 @@
 					<RefreshCw class="h-4 w-4" />
 				{/if}
 				Rebuild cache
+			</Button>
+		</div>
+	</Card>
+
+	<Card class="p-6">
+		<h2 class="text-sm font-semibold">Summary metadata</h2>
+		<p class="mt-1 text-xs text-muted-foreground">
+			Re-parses YAML frontmatter from every <code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">summary.md</code>
+			into the cache that powers the Graph view. Run after editing summaries by hand
+			or when you've upgraded summaries from older versions without metadata.
+		</p>
+		<div class="mt-3 grid grid-cols-2 gap-4 text-xs sm:grid-cols-3">
+			<div>
+				<div class="text-muted-foreground">Indexed</div>
+				<div class="mt-0.5 font-mono">{summaryMeta.items.length}</div>
+			</div>
+			<div>
+				<div class="text-muted-foreground">Papers total</div>
+				<div class="mt-0.5 font-mono">{papers.items.length}</div>
+			</div>
+			<div>
+				<div class="text-muted-foreground">Coverage</div>
+				<div class="mt-0.5 font-mono">
+					{papers.items.length === 0
+						? '—'
+						: `${Math.round((summaryMeta.items.length / papers.items.length) * 100)}%`}
+				</div>
+			</div>
+		</div>
+		{#if reindexResult}
+			<p class="mt-3 text-xs text-muted-foreground">
+				Scanned {reindexResult.scanned} papers · indexed {reindexResult.indexed}
+				{#if reindexResult.cleared > 0}
+					· cleared {reindexResult.cleared} stale
+				{/if}.
+			</p>
+		{/if}
+		{#if reindexError}
+			<p class="mt-3 text-xs text-destructive">{reindexError}</p>
+		{/if}
+		<div class="mt-4">
+			<Button variant="outline" onclick={doReindexSummaryMeta} disabled={reindexing}>
+				{#if reindexing}
+					<Loader2 class="h-4 w-4 animate-spin" />
+				{:else}
+					<Tags class="h-4 w-4" />
+				{/if}
+				Reindex summary metadata
 			</Button>
 		</div>
 	</Card>

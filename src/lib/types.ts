@@ -71,3 +71,16 @@ export interface ChatSummary {
 export interface ReosConfig {
 	papersDir: string | null;
 }
+
+/**
+ * Structured metadata extracted from the YAML frontmatter at the top of each
+ * `summary.md`. Cached in SQLite so the graph view doesn't have to read every
+ * file on load. Arrays are normalized to lowercase, hyphenated, deduped tags.
+ */
+export interface SummaryMeta {
+	paperId: string;
+	topics: string[];
+	domains: string[];
+	keywords: string[];
+	updatedAt: string;
+}

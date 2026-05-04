@@ -6,6 +6,7 @@
 	import type { Paper } from '$lib/types';
 	import { INBOX_SLUG, readPaperSummary } from '$lib/tauri/fs';
 	import { toolIcon, toolVerb } from '$lib/tauri/stream';
+	import { parseSummaryFrontmatter, isMetaEmpty } from '$lib/summary-meta';
 	import {
 		cancelJob,
 		clearJob,
@@ -31,6 +32,7 @@
 
 	let summary = $state<string | null>(null);
 	let summaryHtml = $state<string>('');
+	let summaryFrontmatter = $state<{ topics: string[]; domains: string[]; keywords: string[] } | null>(null);
 	let loaded = $state(false);
 	let stderrExpanded = $state(true);
 	let now = $state(Date.now());
@@ -60,7 +62,14 @@
 	async function load() {
 		loaded = false;
 		summary = await readPaperSummary(paper.threadId ?? INBOX_SLUG, paper.arxivId);
-		summaryHtml = summary ? await marked.parse(summary) : '';
+		if (summary) {
+			const { meta, body } = parseSummaryFrontmatter(summary);
+			summaryFrontmatter = isMetaEmpty(meta) ? null : meta;
+			summaryHtml = await marked.parse(body);
+		} else {
+			summaryFrontmatter = null;
+			summaryHtml = '';
+		}
 		loaded = true;
 	}
 
@@ -267,6 +276,34 @@
 		</div>
 		<div class="flex-1 overflow-y-auto px-6 py-8 sm:px-10">
 			<div class="summary-md mx-auto">
+				{#if summaryFrontmatter}
+					<div class="summary-meta mb-6 space-y-2">
+						{#if summaryFrontmatter.topics.length}
+							<div class="flex flex-wrap items-baseline gap-1.5">
+								<span class="meta-label">Topics</span>
+								{#each summaryFrontmatter.topics as t (t)}
+									<span class="chip chip-topic">{t}</span>
+								{/each}
+							</div>
+						{/if}
+						{#if summaryFrontmatter.domains.length}
+							<div class="flex flex-wrap items-baseline gap-1.5">
+								<span class="meta-label">Domains</span>
+								{#each summaryFrontmatter.domains as d (d)}
+									<span class="chip chip-domain">{d}</span>
+								{/each}
+							</div>
+						{/if}
+						{#if summaryFrontmatter.keywords.length}
+							<div class="flex flex-wrap items-baseline gap-1.5">
+								<span class="meta-label">Keywords</span>
+								{#each summaryFrontmatter.keywords as k (k)}
+									<span class="chip chip-keyword">{k}</span>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{/if}
 				{@html summaryHtml}
 			</div>
 		</div>
@@ -455,6 +492,44 @@
 	}
 	.summary-md :global(a:hover) {
 		text-decoration-thickness: 2px;
+	}
+
+	.summary-meta :global(.meta-label) {
+		font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Inter',
+			system-ui, sans-serif;
+		font-size: 0.65rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: hsl(var(--muted-foreground));
+		margin-right: 0.15rem;
+		min-width: 4.5rem;
+	}
+	.summary-meta :global(.chip) {
+		font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Inter',
+			system-ui, sans-serif;
+		font-size: 0.7rem;
+		line-height: 1;
+		padding: 0.22rem 0.5rem;
+		border-radius: 999px;
+		border: 1px solid hsl(var(--border));
+		background: hsl(var(--muted) / 0.4);
+		color: hsl(var(--foreground) / 0.85);
+		white-space: nowrap;
+	}
+	.summary-meta :global(.chip-topic) {
+		background: hsl(var(--accent) / 0.12);
+		border-color: hsl(var(--accent) / 0.4);
+		color: hsl(var(--accent));
+		font-weight: 500;
+	}
+	.summary-meta :global(.chip-domain) {
+		background: hsl(var(--muted) / 0.6);
+		font-weight: 500;
+	}
+	.summary-meta :global(.chip-keyword) {
+		background: transparent;
+		color: hsl(var(--muted-foreground));
 	}
 
 	/* KaTeX: give display math room to breathe and align it visually with prose. */

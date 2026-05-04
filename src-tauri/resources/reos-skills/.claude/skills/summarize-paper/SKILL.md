@@ -9,6 +9,38 @@ You produce practical summaries of research papers — the kind a technical foun
 
 The PDF is at `paper.pdf` in the current working directory. Read it with the Read tool — it supports PDF natively. Do NOT ask the user for a file path; the working directory has been set for you.
 
+## Step 0: Plan the frontmatter
+
+Every `summary.md` you write **must begin with a YAML frontmatter block** containing three array fields. This metadata powers a graph view that connects papers across the library, so be deliberate — these are the signals that decide whether two papers get linked.
+
+```yaml
+---
+topics: [<1–3 hyphenated phrases>]
+domains: [<1–3 hyphenated phrases>]
+keywords: [<4–8 hyphenated single concepts>]
+---
+```
+
+How to fill each field:
+
+- **`topics`** — *what the paper is about technically*: the method, idea, model class, or research question. These are shareable across application areas and are the primary signal for cross-domain connections. Examples: `gaussian-splatting`, `diffusion-policy`, `reward-shaping`, `sparse-view-reconstruction`. Most papers have **one** topic. Use 2–3 only when the paper genuinely fuses multiple ideas (e.g., a survey, or a paper that introduces both a new architecture and a new training objective).
+
+- **`domains`** — *where the paper applies it*: the application area or problem space. Examples: `mobile-robotics`, `space-telescopes`, `video-generation`, `drug-discovery`, `autonomous-driving`. Most papers have **one** domain. Use 2–3 only for genuinely cross-domain work. Domain is intentionally distinct from topic — that's how a "Gaussian splatting for space" paper and a "Gaussian splatting for mobile robotics" paper end up connected (same topic, different domains).
+
+- **`keywords`** — 4–8 lowercase hyphenated tags mixing method-flavored (`neural-radiance-fields`, `cross-attention`, `lora-fine-tuning`) and problem-flavored (`real-time-rendering`, `lidar-fusion`, `out-of-distribution-detection`) concepts. Keywords are secondary connectors: papers in different domains using related techniques should overlap on several keywords.
+
+Formatting rules (strict):
+
+- Lowercase only. Hyphens to separate words within a single concept. **No spaces inside a tag.**
+- Use the YAML inline-array syntax shown above (single line per field). Do not use indented dashes.
+- No quotes around individual values unless a value contains a colon or comma (it shouldn't, given the rules above).
+- Be specific over generic: prefer `gaussian-splatting` over `3d-reconstruction`; prefer `diffusion-policy` over `policy-learning`.
+- Be conservative with array sizes. Inflated arrays produce a noisy graph.
+
+After the closing `---`, leave a blank line and continue with the prose template (Step 1 onward).
+
+---
+
 ## Step 1: Read the paper thoroughly
 
 Don't skim. The important details in academic papers are buried in methodology sections, appendices, ablation studies, and supplementary material — not the abstract. Read the full paper before writing anything.
@@ -161,5 +193,7 @@ In 2-4 sentences: does this paper change how a practitioner should think about t
 ## Step 4: Save it
 
 Write the full summary to `summary.md` in the current working directory using the Write tool — that's the same directory `paper.pdf` lives in. If `summary.md` already exists, overwrite it.
+
+The file **must begin with the YAML frontmatter block from Step 0**, then a blank line, then the prose template body. Skipping the frontmatter means the paper won't show up on the graph view.
 
 Do not include any preamble, follow-up text, or restatement of the summary in your final assistant message after the Write — the file is the deliverable.

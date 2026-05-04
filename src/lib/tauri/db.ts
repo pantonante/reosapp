@@ -1,10 +1,10 @@
 import Database from '@tauri-apps/plugin-sql';
-import type { Paper, Thread, ThreadPaper } from '$lib/types';
+import type { Paper, SummaryMeta, Thread, ThreadPaper } from '$lib/types';
 
 let _db: Database | null = null;
 let _ready: Promise<Database> | null = null;
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS papers (
@@ -53,6 +53,15 @@ CREATE TABLE IF NOT EXISTS _meta (
 	key TEXT PRIMARY KEY,
 	value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS summary_meta (
+	paperId TEXT PRIMARY KEY,
+	topics TEXT NOT NULL DEFAULT '[]',
+	domains TEXT NOT NULL DEFAULT '[]',
+	keywords TEXT NOT NULL DEFAULT '[]',
+	updatedAt TEXT NOT NULL,
+	FOREIGN KEY (paperId) REFERENCES papers(id) ON DELETE CASCADE
+);
 `;
 
 export async function getDb(): Promise<Database> {
@@ -93,6 +102,16 @@ function rowToPaper(row: Record<string, unknown>): Paper {
 		threadId: (row.threadId as string) ?? undefined,
 		orderInThread: row.orderInThread == null ? undefined : Number(row.orderInThread),
 		contextNote: (row.contextNote as string) ?? undefined
+	};
+}
+
+function rowToSummaryMeta(row: Record<string, unknown>): SummaryMeta {
+	return {
+		paperId: row.paperId as string,
+		topics: JSON.parse((row.topics as string) || '[]'),
+		domains: JSON.parse((row.domains as string) || '[]'),
+		keywords: JSON.parse((row.keywords as string) || '[]'),
+		updatedAt: (row.updatedAt as string) ?? new Date().toISOString()
 	};
 }
 
@@ -254,9 +273,50 @@ export const db = {
 
 	async wipeAll(): Promise<void> {
 		const conn = await getDb();
+		await conn.execute('DELETE FROM summary_meta');
 		await conn.execute('DELETE FROM thread_papers');
 		await conn.execute('DELETE FROM papers');
 		await conn.execute('DELETE FROM threads');
+	},
+
+	async getAllSummaryMeta(): Promise<SummaryMeta[]> {
+		const conn = await getDb();
+		const rows = await conn.select<Record<string, unknown>[]>('SELECT * FROM summary_meta');
+		return rows.map(rowToSummaryMeta);
+	},
+
+	async getSummaryMeta(paperId: string): Promise<SummaryMeta | null> {
+		const conn = await getDb();
+		const rows = await conn.select<Record<string, unknown>[]>(
+			'SELECT * FROM summary_meta WHERE paperId = ?',
+			[paperId]
+		);
+		return rows[0] ? rowToSummaryMeta(rows[0]) : null;
+	},
+
+	async setSummaryMeta(meta: SummaryMeta): Promise<void> {
+		const conn = await getDb();
+		await conn.execute(
+			`INSERT INTO summary_meta(paperId, topics, domains, keywords, updatedAt)
+			VALUES(?, ?, ?, ?, ?)
+			ON CONFLICT(paperId) DO UPDATE SET
+				topics = excluded.topics,
+				domains = excluded.domains,
+				keywords = excluded.keywords,
+				updatedAt = excluded.updatedAt`,
+			[
+				meta.paperId,
+				JSON.stringify(meta.topics),
+				JSON.stringify(meta.domains),
+				JSON.stringify(meta.keywords),
+				meta.updatedAt
+			]
+		);
+	},
+
+	async removeSummaryMeta(paperId: string): Promise<void> {
+		const conn = await getDb();
+		await conn.execute('DELETE FROM summary_meta WHERE paperId = ?', [paperId]);
 	},
 
 	async setMeta(key: string, value: string): Promise<void> {
