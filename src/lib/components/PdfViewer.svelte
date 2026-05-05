@@ -122,8 +122,12 @@
 		return () => window.removeEventListener('keydown', onKey);
 	});
 
+	let lastLoadedPath = $state<string | null>(null);
 	$effect(() => {
-		if (path) loadPdf();
+		if (path && path !== lastLoadedPath) {
+			lastLoadedPath = path;
+			loadPdf();
+		}
 	});
 
 	onDestroy(() => {

@@ -237,4 +237,12 @@
 	.thread-status-select select option {
 		@apply bg-popover text-popover-foreground;
 	}
+
+	.no-scrollbar {
+		scrollbar-width: none;
+		-ms-overflow-style: none;
+	}
+	.no-scrollbar::-webkit-scrollbar {
+		display: none;
+	}
 }

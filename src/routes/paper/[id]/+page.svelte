@@ -8,7 +8,7 @@
 	import PaperSummary from '$lib/components/PaperSummary.svelte';
 	import { revealInFinder, openExternal } from '$lib/tauri/shell';
 	import { readNotes, writeNotes } from '$lib/tauri/fs';
-	import { ExternalLink, FolderOpen, Star, FileText, Sparkles, MessageSquare, PanelRight, Inbox, Check, ArrowRightLeft } from 'lucide-svelte';
+	import { ExternalLink, FolderOpen, Star, FileText, Sparkles, MessageSquare, PanelRight, Inbox, Check, ArrowRightLeft, Github, Trash2 } from 'lucide-svelte';
 	import type { ReadingStatus } from '$lib/types';
 
 	const id = $derived(page.params.id!);
@@ -96,6 +96,55 @@
 	async function setRating(r: number) {
 		if (!paper) return;
 		await papers.update(paper.id, { rating: paper.rating === r ? null : r });
+	}
+
+	let newLink = $state('');
+
+	function normalizeUrl(raw: string): string | null {
+		const trimmed = raw.trim();
+		if (!trimmed) return null;
+		const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+		try {
+			return new URL(withScheme).toString();
+		} catch {
+			return null;
+		}
+	}
+
+	function linkLabel(url: string): string {
+		try {
+			return new URL(url).hostname.replace(/^www\./, '');
+		} catch {
+			return url;
+		}
+	}
+
+	function isGithub(url: string): boolean {
+		try {
+			const h = new URL(url).hostname;
+			return h === 'github.com' || h.endsWith('.github.io');
+		} catch {
+			return false;
+		}
+	}
+
+	async function addLink() {
+		if (!paper) return;
+		const url = normalizeUrl(newLink);
+		if (!url) return;
+		if (paper.links?.includes(url)) {
+			newLink = '';
+			return;
+		}
+		await papers.update(paper.id, { links: [...(paper.links ?? []), url] });
+		newLink = '';
+	}
+
+	async function removeLink(url: string) {
+		if (!paper) return;
+		await papers.update(paper.id, {
+			links: (paper.links ?? []).filter((l) => l !== url)
+		});
 	}
 
 	function openMovePicker() {
@@ -292,6 +341,62 @@
 										</p>
 									</div>
 								{/if}
+
+								<div>
+									<div class="text-[10px] uppercase tracking-wider text-muted-foreground">
+										Links
+									</div>
+									{#if paper.links?.length}
+										<ul class="mt-2 space-y-1">
+											{#each paper.links as url (url)}
+												<li class="group flex items-center gap-2">
+													<button
+														type="button"
+														class="flex min-w-0 flex-1 items-center gap-2 rounded-md border border-border/60 bg-card px-2 py-1 text-left text-xs transition-colors hover:border-border hover:bg-card/80"
+														onclick={() => openExternal(url)}
+														title={url}
+													>
+														{#if isGithub(url)}
+															<Github class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+														{:else}
+															<ExternalLink class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+														{/if}
+														<span class="truncate">{linkLabel(url)}</span>
+													</button>
+													<button
+														type="button"
+														class="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/15 hover:text-destructive group-hover:opacity-100"
+														onclick={() => removeLink(url)}
+														aria-label="Remove link"
+													>
+														<Trash2 class="h-3 w-3" />
+													</button>
+												</li>
+											{/each}
+										</ul>
+									{/if}
+									<form
+										class="mt-2 flex gap-1"
+										onsubmit={(e) => {
+											e.preventDefault();
+											void addLink();
+										}}
+									>
+										<Input
+											bind:value={newLink}
+											placeholder="Add a link (GitHub, project page, blog…)"
+											class="h-8 text-xs"
+										/>
+										<Button
+											type="submit"
+											size="sm"
+											variant="outline"
+											disabled={!normalizeUrl(newLink)}
+										>
+											Add
+										</Button>
+									</form>
+								</div>
 
 								<Separator />
 

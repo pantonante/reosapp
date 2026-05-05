@@ -194,8 +194,20 @@
 />
 
 {#if tabs.length > 0}
-	<div class="flex h-10 items-center gap-1 overflow-x-auto border-b border-border/60 px-2">
-		{#each tabs as tab (tab.kind + tab.id)}
+	<div
+		class="no-scrollbar flex h-10 items-center gap-1 overflow-x-auto border-b border-border/60 px-2"
+		onwheel={(e) => {
+			if (e.deltaY === 0) return;
+			const el = e.currentTarget;
+			if (el.scrollWidth <= el.clientWidth) return;
+			el.scrollLeft += e.deltaY;
+			e.preventDefault();
+		}}
+	>
+		{#each tabs as tab, i (tab.kind + tab.id)}
+			{#if i > 0}
+				<span class="h-3.5 w-px shrink-0 bg-border/50" aria-hidden="true"></span>
+			{/if}
 			{@const active = isActive(tab)}
 			{@const key = tabKey(tab)}
 			{@const showBefore = dropTargetKey === key && dropPosition === 'before' && draggingKey !== key}
