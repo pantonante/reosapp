@@ -3,7 +3,7 @@
 	import PaperCard from '$lib/components/PaperCard.svelte';
 	import { goto } from '$app/navigation';
 	import { Button } from '$lib/components/ui';
-	import { Plus } from 'lucide-svelte';
+	import { Plus, Trash2 } from 'lucide-svelte';
 	import { ui } from '$lib/stores.svelte';
 
 	const unfiled = $derived(
@@ -17,6 +17,13 @@
 	function open(id: string) {
 		ui.openPaper(id);
 		goto(`/paper/${id}`);
+	}
+
+	async function deletePaper(id: string) {
+		const p = papers.get(id);
+		if (!p) return;
+		if (!confirm(`Delete "${p.title}"? This removes the PDF, notes, and chats from disk.`)) return;
+		await papers.remove(id);
 	}
 </script>
 
@@ -41,7 +48,17 @@
 			</h2>
 			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 				{#each reading as p (p.id)}
-					<PaperCard paper={p} onclick={() => open(p.id)} />
+					<div class="group relative">
+						<PaperCard paper={p} onclick={() => open(p.id)} />
+						<button
+							class="absolute right-2 top-2 rounded p-1 opacity-0 transition-opacity hover:bg-destructive/15 hover:text-destructive group-hover:opacity-100"
+							onclick={() => deletePaper(p.id)}
+							aria-label="Delete paper"
+							title="Delete paper"
+						>
+							<Trash2 class="h-3.5 w-3.5" />
+						</button>
+					</div>
 				{/each}
 			</div>
 		</section>
@@ -60,7 +77,17 @@
 			</div>
 			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 				{#each unfiled as p (p.id)}
-					<PaperCard paper={p} onclick={() => open(p.id)} />
+					<div class="group relative">
+						<PaperCard paper={p} onclick={() => open(p.id)} />
+						<button
+							class="absolute right-2 top-2 rounded p-1 opacity-0 transition-opacity hover:bg-destructive/15 hover:text-destructive group-hover:opacity-100"
+							onclick={() => deletePaper(p.id)}
+							aria-label="Delete paper"
+							title="Delete paper"
+						>
+							<Trash2 class="h-3.5 w-3.5" />
+						</button>
+					</div>
 				{/each}
 			</div>
 		</section>

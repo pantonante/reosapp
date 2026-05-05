@@ -343,7 +343,9 @@
 		font-feature-settings: 'kern', 'liga', 'clig', 'calt', 'onum';
 		text-rendering: optimizeLegibility;
 		-webkit-font-smoothing: antialiased;
-		max-width: 68ch;
+		/* Container fills the scroll area; the 68ch reading limit is applied to
+		   prose children individually so tables can use the full width. */
+		width: 100%;
 		hyphens: auto;
 	}
 
@@ -460,8 +462,10 @@
 		font-style: italic;
 	}
 	.summary-md :global(table) {
+		/* Tables span the full container width (with the parent scroll area's
+		   px-10 already supplying the small margin from the panel edges). */
 		border-collapse: collapse;
-		margin: 1rem 0;
+		margin: 1.25rem 0;
 		font-size: 0.95em;
 		width: 100%;
 	}
@@ -492,6 +496,24 @@
 	}
 	.summary-md :global(a:hover) {
 		text-decoration-thickness: 2px;
+	}
+
+	/* Constrain prose to a comfortable reading width while letting tables span
+	   the full container. Placed after the per-element rules so margin-inline
+	   wins over their `margin: x 0` shorthand. */
+	.summary-md :global(h1),
+	.summary-md :global(h2),
+	.summary-md :global(h3),
+	.summary-md :global(h4),
+	.summary-md :global(p),
+	.summary-md :global(ul),
+	.summary-md :global(ol),
+	.summary-md :global(blockquote),
+	.summary-md :global(pre),
+	.summary-md :global(hr),
+	.summary-md > .summary-meta {
+		max-width: 68ch;
+		margin-inline: auto;
 	}
 
 	.summary-meta :global(.meta-label) {

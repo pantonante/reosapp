@@ -56,6 +56,10 @@ function createPapersStore() {
 		async remove(id: string) {
 			const current = items.find((i) => i.id === id);
 			items = items.filter((i) => i.id !== id);
+			ui.closePaper(id);
+			if (summaryMeta.has(id)) {
+				await summaryMeta.remove(id);
+			}
 			if (current) {
 				await removePaperFolder(current.threadId ?? INBOX_SLUG, current.arxivId);
 			}
