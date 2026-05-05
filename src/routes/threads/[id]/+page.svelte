@@ -4,7 +4,14 @@
 	import { papers, threads, ui } from '$lib/stores.svelte';
 	import { Button, Badge } from '$lib/components/ui';
 	import { goto } from '$app/navigation';
-	import { Plus, Trash2, Archive, ArchiveRestore, MessageSquare } from 'lucide-svelte';
+	import {
+		Plus,
+		Trash2,
+		Archive,
+		ArchiveRestore,
+		MessageSquare,
+		ChevronDown
+	} from 'lucide-svelte';
 	import type { ReadingStatus, ThreadStatus } from '$lib/types';
 	import PaperCard from '$lib/components/PaperCard.svelte';
 
@@ -82,7 +89,7 @@
 					></textarea>
 				</div>
 				<div class="flex flex-wrap items-center gap-2">
-					<Button onclick={() => goto(`/threads/${thread.id}/chat`)}>
+					<Button variant="subtle" onclick={() => goto(`/threads/${thread.id}/chat`)}>
 						<MessageSquare class="h-4 w-4" />
 						Chat
 					</Button>
@@ -90,40 +97,55 @@
 						<Plus class="h-4 w-4" />
 						Add paper
 					</Button>
-					<select
-						class="h-9 rounded-md border border-input bg-background px-3 text-sm"
-						value={thread.status}
-						onchange={(e) => setStatus(e.currentTarget.value as ThreadStatus)}
-					>
-						<option value="active">Active</option>
-						<option value="paused">Paused</option>
-						<option value="concluded">Concluded</option>
-						<option value="archived">Archived</option>
-					</select>
-					{#if thread.status === 'archived'}
+					<label class="thread-status-select group">
+						<select
+							value={thread.status}
+							onchange={(e) => setStatus(e.currentTarget.value as ThreadStatus)}
+						>
+							<option value="active">Active</option>
+							<option value="paused">Paused</option>
+							<option value="concluded">Concluded</option>
+							<option value="archived">Archived</option>
+						</select>
+						<ChevronDown
+							class="pointer-events-none h-3.5 w-3.5 text-muted-foreground transition-colors group-hover:text-foreground"
+						/>
+					</label>
+					<div class="ml-1 flex items-center rounded-[10px] border border-border/60 bg-secondary/30 p-0.5 shadow-[inset_0_1px_0_0_hsl(var(--panel-highlight)/0.3)]">
+						{#if thread.status === 'archived'}
+							<Button
+								variant="ghost"
+								size="icon"
+								class="h-8 w-8 rounded-[8px]"
+								onclick={() => setStatus('active')}
+								aria-label="Unarchive thread"
+								title="Unarchive"
+							>
+								<ArchiveRestore class="h-4 w-4" />
+							</Button>
+						{:else}
+							<Button
+								variant="ghost"
+								size="icon"
+								class="h-8 w-8 rounded-[8px]"
+								onclick={() => setStatus('archived')}
+								aria-label="Archive thread"
+								title="Archive"
+							>
+								<Archive class="h-4 w-4" />
+							</Button>
+						{/if}
 						<Button
 							variant="ghost"
 							size="icon"
-							onclick={() => setStatus('active')}
-							aria-label="Unarchive thread"
-							title="Unarchive"
+							class="h-8 w-8 rounded-[8px] hover:text-destructive"
+							onclick={deleteThread}
+							aria-label="Delete thread"
+							title="Delete"
 						>
-							<ArchiveRestore class="h-4 w-4" />
+							<Trash2 class="h-4 w-4" />
 						</Button>
-					{:else}
-						<Button
-							variant="ghost"
-							size="icon"
-							onclick={() => setStatus('archived')}
-							aria-label="Archive thread"
-							title="Archive"
-						>
-							<Archive class="h-4 w-4" />
-						</Button>
-					{/if}
-					<Button variant="ghost" size="icon" onclick={deleteThread} aria-label="Delete thread">
-						<Trash2 class="h-4 w-4" />
-					</Button>
+					</div>
 				</div>
 			</div>
 			<div class="mt-3 flex items-center gap-2 text-[11px] text-muted-foreground">

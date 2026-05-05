@@ -2,15 +2,21 @@
 	import { tv, type VariantProps } from 'tailwind-variants';
 
 	export const buttonVariants = tv({
-		base: 'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
+		base: 'group/btn relative inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] text-sm font-medium ring-offset-background transition-[background,box-shadow,transform,border-color,color] duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 active:translate-y-px',
 		variants: {
 			variant: {
-				default: 'bg-primary text-primary-foreground hover:bg-primary/90',
-				destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
-				outline: 'border border-border/70 bg-transparent hover:bg-secondary hover:text-foreground',
-				secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
-				subtle: 'border border-border/70 bg-secondary/60 text-foreground hover:bg-secondary',
-				ghost: 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+				default:
+					'bg-primary text-primary-foreground shadow-[inset_0_1px_0_0_hsl(var(--primary-foreground)/0.18),0_1px_2px_0_hsl(var(--shadow-color)/calc(var(--shadow-opacity)*0.8))] hover:bg-primary/90 hover:shadow-[inset_0_1px_0_0_hsl(var(--primary-foreground)/0.22),0_3px_8px_-2px_hsl(var(--shadow-color)/var(--shadow-opacity))]',
+				destructive:
+					'bg-destructive text-destructive-foreground shadow-[inset_0_1px_0_0_rgb(255_255_255/0.16),0_1px_2px_0_hsl(var(--shadow-color)/calc(var(--shadow-opacity)*0.8))] hover:bg-destructive/90 hover:shadow-[inset_0_1px_0_0_rgb(255_255_255/0.2),0_3px_8px_-2px_hsl(var(--shadow-color)/var(--shadow-opacity))]',
+				outline:
+					'border border-border/70 bg-transparent hover:border-border hover:bg-secondary hover:text-foreground',
+				secondary:
+					'border border-border/60 bg-secondary text-secondary-foreground shadow-[inset_0_1px_0_0_hsl(var(--panel-highlight)/0.4)] hover:border-border hover:bg-secondary/85',
+				subtle:
+					'border border-border/60 bg-secondary/50 text-foreground shadow-[inset_0_1px_0_0_hsl(var(--panel-highlight)/0.35)] hover:border-border hover:bg-secondary',
+				ghost:
+					'text-muted-foreground hover:bg-secondary hover:text-foreground hover:shadow-[inset_0_1px_0_0_hsl(var(--panel-highlight)/0.35)]',
 				link: 'text-accent underline-offset-4 hover:underline'
 			},
 			size: {
