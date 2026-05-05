@@ -6,8 +6,10 @@
 	import { INBOX_SLUG, readPaperSummary } from '$lib/tauri/fs';
 	import { parseSummaryFrontmatter, isMetaEmpty } from '$lib/summary-meta';
 	import { open as openDialog } from '@tauri-apps/plugin-dialog';
-	import { FolderOpen, RefreshCw, Loader2, Tags } from 'lucide-svelte';
+	import { FolderOpen, RefreshCw, Loader2, Tags, Check } from 'lucide-svelte';
 	import { onMount } from 'svelte';
+	import { theme, THEMES, type Theme } from '$lib/theme.svelte';
+	import { cn } from '$lib/utils/cn';
 
 	let rebuilding = $state(false);
 	let lastResult = $state<RebuildResult | null>(null);
@@ -99,6 +101,55 @@
 		<h1 class="font-mono text-2xl font-light tracking-tight">Settings</h1>
 		<p class="mt-1 text-sm text-muted-foreground">App configuration and cache management.</p>
 	</header>
+
+	<Card class="p-6">
+		<h2 class="text-sm font-semibold">Theme</h2>
+		<p class="mt-1 text-xs text-muted-foreground">
+			Choose the look of the app. Saved per device.
+		</p>
+		<div class="mt-3 grid gap-2 sm:grid-cols-2">
+			{#each THEMES as t (t.id)}
+				{@const active = theme.current === t.id}
+				<button
+					type="button"
+					class={cn(
+						'flex items-center gap-3 rounded-[10px] border p-3 text-left transition-colors',
+						active
+							? 'border-border bg-secondary'
+							: 'border-border/60 hover:border-border hover:bg-secondary/40'
+					)}
+					onclick={() => theme.set(t.id as Theme)}
+				>
+					<span
+						class={cn(
+							'flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] border border-border/60',
+							t.id === 'dracula' && 'bg-[hsl(222_24%_4%)]',
+							t.id === 'dark' && 'bg-[hsl(0_0%_5%)]',
+							t.id === 'light' && 'bg-[hsl(220_14%_96%)]',
+							t.id === 'solarized' && 'bg-[hsl(44_87%_94%)]'
+						)}
+					>
+						<span
+							class={cn(
+								'h-3.5 w-3.5 rounded-full',
+								t.id === 'dracula' && 'bg-[hsl(210_80%_62%)]',
+								t.id === 'dark' && 'bg-[hsl(210_80%_62%)]',
+								t.id === 'light' && 'bg-[hsl(210_80%_50%)]',
+								t.id === 'solarized' && 'bg-[hsl(18_80%_44%)]'
+							)}
+						></span>
+					</span>
+					<span class="min-w-0 flex-1">
+						<span class="block text-sm font-medium">{t.label}</span>
+						<span class="block text-[11px] text-muted-foreground">{t.description}</span>
+					</span>
+					{#if active}
+						<Check class="h-4 w-4 text-foreground" />
+					{/if}
+				</button>
+			{/each}
+		</div>
+	</Card>
 
 	<Card class="p-6">
 		<h2 class="text-sm font-semibold">Papers folder</h2>

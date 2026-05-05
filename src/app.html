@@ -1,10 +1,21 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en" class="dark" data-theme="dracula">
 	<head>
 		<meta charset="utf-8" />
 		<link rel="icon" href="%sveltekit.assets%/favicon.png" />
 		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 		<title>Re:OS</title>
+		<script>
+			(function () {
+				try {
+					var t = localStorage.getItem('reos:theme');
+					if (t && ['dracula', 'dark', 'light', 'solarized'].indexOf(t) >= 0) {
+						document.documentElement.setAttribute('data-theme', t);
+						document.documentElement.classList.toggle('dark', t === 'dracula' || t === 'dark');
+					}
+				} catch (e) {}
+			})();
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover" class="bg-background text-foreground antialiased">

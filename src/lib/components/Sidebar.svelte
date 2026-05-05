@@ -15,7 +15,10 @@
 	];
 </script>
 
-<aside class="panel flex h-full w-12 shrink-0 flex-col items-center gap-1 px-1.5 py-2">
+<aside
+	class="panel flex h-full w-12 shrink-0 flex-col items-center gap-1 px-1.5 py-2"
+	data-tauri-drag-region="false"
+>
 	<button
 		class="rail-btn"
 		onclick={() => (ui.commandPaletteOpen = true)}

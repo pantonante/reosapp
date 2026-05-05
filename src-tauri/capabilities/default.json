@@ -8,6 +8,7 @@
     "core:event:default",
     "core:webview:default",
     "core:window:default",
+    "core:window:allow-start-dragging",
     "core:path:default",
     "fs:default",
     "fs:allow-home-read-recursive",
