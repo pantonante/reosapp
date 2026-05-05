@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
 	import { papers, threads, ui } from '$lib/stores.svelte';
-	import { Button, Badge, Input } from '$lib/components/ui';
+	import { Button, Input } from '$lib/components/ui';
 	import { goto } from '$app/navigation';
 	import {
 		Plus,
@@ -105,17 +105,20 @@
 	<div class="space-y-6 p-4 sm:p-8">
 		<header>
 			<div class="flex flex-wrap items-start justify-between gap-3">
-				<div class="min-w-0 flex-1 basis-full lg:basis-0">
+				<div class="relative min-w-0 flex-1 basis-full lg:basis-0">
+					<span class="pointer-events-none absolute -top-5 left-0 text-[10px] text-muted-foreground">
+						created {thread.createdAt.slice(0, 10)}
+					</span>
 					<input
 						class="w-full bg-transparent font-mono text-2xl font-light tracking-tight text-foreground focus:outline-none"
 						value={thread.title}
 						onblur={(e) => threads.update(thread.id, { title: e.currentTarget.value })}
 					/>
 					<textarea
-						class="mt-1 w-full resize-none bg-transparent text-sm text-muted-foreground focus:outline-none"
+						class="w-full resize-none bg-transparent text-sm text-muted-foreground focus:outline-none"
 						placeholder="What question does this thread explore?"
 						value={thread.question}
-						rows={2}
+						rows={1}
 						onblur={(e) => threads.update(thread.id, { question: e.currentTarget.value })}
 					></textarea>
 				</div>
@@ -179,13 +182,9 @@
 					</div>
 				</div>
 			</div>
-			<div class="mt-3 flex items-center gap-2 text-[11px] text-muted-foreground">
-				<Badge variant="outline">{thread.papers.length} papers</Badge>
-				<span>created {thread.createdAt.slice(0, 10)}</span>
-			</div>
 		</header>
 
-		<div class="flex flex-wrap items-center gap-2">
+		<div class="!mt-2 flex flex-wrap items-center gap-2">
 			<Input
 				bind:value={search}
 				placeholder="Filter title, authors, arxiv ID…"
