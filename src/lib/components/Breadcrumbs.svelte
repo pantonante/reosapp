@@ -10,13 +10,13 @@
 		const path = page.url.pathname;
 		const segs = path.split('/').filter(Boolean);
 
-		if (segs.length === 0) return [{ label: 'Inbox' }];
-		if (segs[0] === 'library') return [{ label: 'Library' }];
-		if (segs[0] === 'graph') return [{ label: 'Graph' }];
+		if (segs.length === 0) return [{ label: 'inbox' }];
+		if (segs[0] === 'library') return [{ label: 'library' }];
+		if (segs[0] === 'graph') return [{ label: 'graph' }];
 
 		if (segs[0] === 'threads') {
-			const out: Crumb[] = [{ label: 'Threads', href: '/threads' }];
-			if (segs.length === 1) return [{ label: 'Threads' }];
+			const out: Crumb[] = [{ label: 'threads', href: '/threads' }];
+			if (segs.length === 1) return [{ label: 'threads' }];
 			const t = threads.get(segs[1]);
 			const title = t?.title ?? segs[1];
 			if (segs.length === 2) {
@@ -24,30 +24,37 @@
 				return out;
 			}
 			out.push({ label: title, href: `/threads/${segs[1]}` });
-			if (segs[2] === 'chat') out.push({ label: 'Chat' });
+			if (segs[2] === 'chat') out.push({ label: 'chat' });
 			else out.push({ label: segs[2] });
 			return out;
 		}
 
 		if (segs[0] === 'paper' && segs[1]) {
 			const p = papers.get(segs[1]);
-			const title = p?.title ?? 'Paper';
-			if (!p) return [{ label: 'Library', href: '/library' }, { label: title }];
+			const title = p?.title ?? 'paper';
+			if (!p)
+				return [
+					{ label: 'library', href: '/library' },
+					{ label: title }
+				];
 			if (p.threadId && p.threadId !== 'inbox') {
 				const t = threads.get(p.threadId);
 				return [
-					{ label: 'Threads', href: '/threads' },
+					{ label: 'threads', href: '/threads' },
 					{ label: t?.title ?? p.threadId, href: `/threads/${p.threadId}` },
 					{ label: title }
 				];
 			}
 			if (p.threadId === 'inbox') {
 				return [
-					{ label: 'Inbox', href: '/' },
+					{ label: 'inbox', href: '/' },
 					{ label: title }
 				];
 			}
-			return [{ label: 'Library', href: '/library' }, { label: title }];
+			return [
+				{ label: 'library', href: '/library' },
+				{ label: title }
+			];
 		}
 
 		return [{ label: segs[0] }];
@@ -73,7 +80,7 @@
 			</button>
 		{:else}
 			<span
-				class="max-w-[60ch] truncate uppercase tracking-wider text-foreground"
+				class="max-w-[60ch] truncate tracking-wider text-foreground"
 				title={c.label}
 			>
 				{c.label}

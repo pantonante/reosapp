@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
 	import { papers, threads, ui } from '$lib/stores.svelte';
-	import { Button, Badge } from '$lib/components/ui';
+	import { Button, Badge, Input } from '$lib/components/ui';
 	import { goto } from '$app/navigation';
 	import {
 		Plus,
@@ -22,9 +22,40 @@
 		if (id) untrack(() => ui.openThread(id));
 	});
 
+	let search = $state('');
+	let sortBy = $state<'order' | 'added' | 'published' | 'title' | 'rating'>('order');
+
 	const threadPapers = $derived.by(() =>
 		(thread?.papers ?? []).map((tp) => papers.get(tp.paperId)).filter(Boolean)
 	);
+
+	const filteredPapers = $derived.by(() => {
+		const q = search.trim().toLowerCase();
+		const list = threadPapers.filter((p) => {
+			if (!p) return false;
+			if (!q) return true;
+			const hay = `${p.title} ${p.authors.join(' ')} ${p.arxivId}`.toLowerCase();
+			return hay.includes(q);
+		});
+		const sorted = [...list];
+		switch (sortBy) {
+			case 'added':
+				sorted.sort((a, b) => (a!.addedAt > b!.addedAt ? -1 : 1));
+				break;
+			case 'published':
+				sorted.sort((a, b) => (a!.publishedDate > b!.publishedDate ? -1 : 1));
+				break;
+			case 'title':
+				sorted.sort((a, b) => a!.title.localeCompare(b!.title));
+				break;
+			case 'rating':
+				sorted.sort((a, b) => (b!.rating ?? -1) - (a!.rating ?? -1));
+				break;
+			default:
+				break;
+		}
+		return sorted;
+	});
 
 	const cols: { status: ReadingStatus; label: string }[] = [
 		{ status: 'unread', label: 'Unread' },
@@ -33,7 +64,7 @@
 	];
 
 	function papersByStatus(status: ReadingStatus) {
-		return threadPapers.filter((p) => p && p.readingStatus === status);
+		return filteredPapers.filter((p) => p && p.readingStatus === status);
 	}
 
 	async function setStatus(threadStatus: ThreadStatus) {
@@ -153,6 +184,24 @@
 				<span>created {thread.createdAt.slice(0, 10)}</span>
 			</div>
 		</header>
+
+		<div class="flex flex-wrap items-center gap-2">
+			<Input
+				bind:value={search}
+				placeholder="Filter title, authors, arxiv ID…"
+				class="max-w-xs"
+			/>
+			<select
+				class="h-9 rounded-md border border-input bg-background px-3 text-sm sm:ml-auto"
+				bind:value={sortBy}
+			>
+				<option value="order">Thread order</option>
+				<option value="added">Recently added</option>
+				<option value="published">Published date</option>
+				<option value="title">Title</option>
+				<option value="rating">Rating</option>
+			</select>
+		</div>
 
 		<div class="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
 			{#each cols as col (col.status)}

@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { threads, ui } from '$lib/stores.svelte';
-	import { Button, Card } from '$lib/components/ui';
+	import { papers, threads, ui } from '$lib/stores.svelte';
+	import { Button, Card, Input } from '$lib/components/ui';
 	import { goto } from '$app/navigation';
 	import { Plus, LayoutGrid, Rows3 } from 'lucide-svelte';
 	import type { Thread, ThreadStatus } from '$lib/types';
@@ -11,10 +11,45 @@
 		{ status: 'concluded', label: 'Concluded' }
 	];
 
-	const visibleThreads = $derived(threads.items.filter((t) => t.status !== 'archived'));
+	let search = $state('');
+	let sortBy = $state<'created' | 'lastPaper' | 'name' | 'papers'>('created');
+
+	const nonArchived = $derived(threads.items.filter((t) => t.status !== 'archived'));
+
+	function lastPaperAddedAt(t: Thread): number {
+		let max = 0;
+		for (const tp of t.papers) {
+			const p = papers.items.find((x) => x.id === tp.paperId);
+			if (p?.addedAt) {
+				const ts = Date.parse(p.addedAt);
+				if (ts > max) max = ts;
+			}
+		}
+		return max;
+	}
+
+	const filteredSorted = $derived.by(() => {
+		const q = search.trim().toLowerCase();
+		const list = nonArchived.filter((t) => !q || t.title.toLowerCase().includes(q));
+		const sorted = [...list];
+		switch (sortBy) {
+			case 'name':
+				sorted.sort((a, b) => a.title.localeCompare(b.title));
+				break;
+			case 'papers':
+				sorted.sort((a, b) => b.papers.length - a.papers.length);
+				break;
+			case 'lastPaper':
+				sorted.sort((a, b) => lastPaperAddedAt(b) - lastPaperAddedAt(a));
+				break;
+			default:
+				sorted.sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1));
+		}
+		return sorted;
+	});
 
 	function byStatus(status: ThreadStatus): Thread[] {
-		return visibleThreads.filter((t) => t.status === status);
+		return filteredSorted.filter((t) => t.status === status);
 	}
 
 	function open(t: Thread) {
@@ -28,7 +63,7 @@
 		<div class="min-w-0">
 			<h1 class="font-mono text-2xl font-light tracking-tight">Threads</h1>
 			<p class="mt-1 text-sm text-muted-foreground">
-				{visibleThreads.length} threads
+				{filteredSorted.length} of {nonArchived.length} threads
 			</p>
 		</div>
 		<div class="flex flex-wrap items-center gap-2">
@@ -57,9 +92,26 @@
 		</div>
 	</header>
 
+	<div class="flex flex-wrap items-center gap-2">
+		<Input
+			bind:value={search}
+			placeholder="Filter by name…"
+			class="max-w-xs"
+		/>
+		<select
+			class="h-9 rounded-md border border-input bg-background px-3 text-sm sm:ml-auto"
+			bind:value={sortBy}
+		>
+			<option value="created">Creation date</option>
+			<option value="lastPaper">Last paper added</option>
+			<option value="name">Name</option>
+			<option value="papers">Number of papers</option>
+		</select>
+	</div>
+
 	{#if ui.threadsCompact}
 		<div class="grid gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-			{#each visibleThreads as t (t.id)}
+			{#each filteredSorted as t (t.id)}
 				<button
 					class="rounded-md border border-border/60 bg-card p-2 text-left transition-colors hover:border-border hover:bg-card/80"
 					onclick={() => open(t)}
@@ -101,13 +153,17 @@
 		</div>
 	{/if}
 
-	{#if visibleThreads.length === 0}
+	{#if filteredSorted.length === 0}
 		<div class="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/60 py-20 text-center text-sm text-muted-foreground">
-			<p>No threads yet.</p>
-			<Button class="mt-4" onclick={() => (ui.newThreadOpen = true)}>
-				<Plus class="h-4 w-4" />
-				Create your first thread
-			</Button>
+			{#if search.trim()}
+				<p>No threads match your filter.</p>
+			{:else}
+				<p>No threads yet.</p>
+				<Button class="mt-4" onclick={() => (ui.newThreadOpen = true)}>
+					<Plus class="h-4 w-4" />
+					Create your first thread
+				</Button>
+			{/if}
 		</div>
 	{/if}
 </div>

@@ -10,6 +10,7 @@
 	import { onMount } from 'svelte';
 	import { theme, THEMES, type Theme } from '$lib/theme.svelte';
 	import { cn } from '$lib/utils/cn';
+	import { APP_VERSION } from '$lib/version';
 
 	let rebuilding = $state(false);
 	let lastResult = $state<RebuildResult | null>(null);
@@ -262,8 +263,12 @@
 
 	<Card class="p-6">
 		<h2 class="text-sm font-semibold">About</h2>
+		<div class="mt-3 flex items-baseline gap-2">
+			<span class="text-xs text-muted-foreground">Version</span>
+			<span class="font-mono text-sm">v{APP_VERSION}</span>
+		</div>
 		<p class="mt-2 text-xs text-muted-foreground">
-			Re:OS standalone · v0.1.0 · Tauri 2 · SvelteKit 5
+			Re:OS standalone · Tauri 2 · SvelteKit 5
 		</p>
 	</Card>
 </div>
