@@ -21,6 +21,8 @@ keywords: [<4–8 hyphenated single concepts>]
 ---
 ```
 
+**Before filling these fields, read the library vocabulary file.** The user prompt that triggered this skill includes a line like `Library vocabulary: <absolute path>/vocabulary.md` — Read that file with the Read tool (the path is exposed to you via `--add-dir`). It lists every tag already used elsewhere in the library, with paper-frequency counts. If a tag you're about to write closely matches an existing term, **use the exact existing spelling** (same hyphenation, same word order). Only coin a new tag when nothing in the vocabulary genuinely fits — novel papers should still get novel tags. Treat the vocabulary as a strong preference, not a hard constraint. If the prompt doesn't include a vocabulary path (e.g. older invocations), proceed without it.
+
 How to fill each field:
 
 - **`topics`** — *what the paper is about technically*: the method, idea, model class, or research question. These are shareable across application areas and are the primary signal for cross-domain connections. Examples: `gaussian-splatting`, `diffusion-policy`, `reward-shaping`, `sparse-view-reconstruction`. Most papers have **one** topic. Use 2–3 only when the paper genuinely fuses multiple ideas (e.g., a survey, or a paper that introduces both a new architecture and a new training objective).

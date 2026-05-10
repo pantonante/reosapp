@@ -10,6 +10,7 @@
 	import QuickOpenModal from '$lib/components/QuickOpenModal.svelte';
 	import AddPaperModal from '$lib/components/AddPaperModal.svelte';
 	import NewThreadModal from '$lib/components/NewThreadModal.svelte';
+	import BulkSummaryModal from '$lib/components/BulkSummaryModal.svelte';
 	import FirstRunWizard from '$lib/components/FirstRunWizard.svelte';
 
 	let { children } = $props();
@@ -56,4 +57,5 @@
 	<QuickOpenModal />
 	<AddPaperModal />
 	<NewThreadModal />
+	<BulkSummaryModal />
 {/if}

@@ -1,11 +1,19 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
+import { join } from '@tauri-apps/api/path';
 import type { Paper } from '$lib/types';
-import { INBOX_SLUG, paperDir, readPaperSummary } from '$lib/tauri/fs';
+import {
+	INBOX_SLUG,
+	paperDir,
+	readPaperSummary,
+	reosMetaDir,
+	writeVocabularyFile
+} from '$lib/tauri/fs';
 import type { ChatEvent, ChatStreamArgs } from '$lib/tauri/chat';
 import { parseStreamEvent, type StreamBlock } from '$lib/tauri/stream';
 import { parseSummaryFrontmatter, isMetaEmpty } from '$lib/summary-meta';
 import { summaryMeta } from '$lib/stores.svelte';
+import { buildVocabulary, formatVocabularyMarkdown } from '$lib/vocabulary';
 
 export type JobStatus = 'streaming' | 'completed' | 'error';
 
@@ -166,13 +174,32 @@ export async function startSummary(paper: Paper): Promise<SummaryJob | null> {
 	// the prompt below is a plain trigger that matches the skill's
 	// frontmatter description.
 	const workspaceDir = await paperDir(paper.threadId ?? INBOX_SLUG, paper.arxivId);
-	const prompt = 'Summarize this paper.';
+
+	// Refresh `<papersRoot>/_reos/vocabulary.md` from the live summary_meta
+	// store so the skill can steer toward existing tags. Done per-run so each
+	// paper in a bulk job sees terms produced by earlier completions. The
+	// absolute path is appended to the prompt because Glob from the paper-
+	// folder CWD can't search upward to `_reos/`.
+	let metaDir: string | undefined;
+	let vocabularyPath: string | undefined;
+	try {
+		await writeVocabularyFile(formatVocabularyMarkdown(buildVocabulary(summaryMeta.items)));
+		metaDir = await reosMetaDir();
+		vocabularyPath = await join(metaDir, 'vocabulary.md');
+	} catch (e) {
+		console.warn('[summary-jobs] failed to write vocabulary.md', e);
+	}
+
+	const prompt = vocabularyPath
+		? `Summarize this paper. Library vocabulary: ${vocabularyPath}`
+		: 'Summarize this paper.';
 
 	const args: ChatStreamArgs = {
 		sessionId,
 		prompt,
 		pdfPaths: [],
-		workspaceDir
+		workspaceDir,
+		reosMetaDir: metaDir
 	};
 
 	try {

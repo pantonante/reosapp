@@ -14,6 +14,10 @@ export interface ChatStreamArgs {
 	system?: string;
 	/** Absolute path to the thread folder; used as CWD for the `claude` subprocess. */
 	workspaceDir: string;
+	/** Optional absolute path to `<papersRoot>/_reos`. Exposed to the agent via a
+	 * second `--add-dir` so skills can read shared resources like
+	 * `vocabulary.md`. */
+	reosMetaDir?: string;
 }
 
 export async function startChatStream(args: ChatStreamArgs): Promise<void> {

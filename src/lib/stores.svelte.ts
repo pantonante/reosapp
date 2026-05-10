@@ -267,6 +267,7 @@ export const ui = (() => {
 	let quickOpenOpen = $state(false);
 	let addPaperOpen = $state(false);
 	let newThreadOpen = $state(false);
+	let bulkSummaryOpen = $state(false);
 	let addPaperTargetThreadId = $state<string | null>(null);
 	let sidebarCollapsed = $state(readLocal('reos:sidebarCollapsed', false));
 	let pdfFullscreen = $state(false);
@@ -330,6 +331,12 @@ export const ui = (() => {
 		},
 		set addPaperOpen(v) {
 			addPaperOpen = v;
+		},
+		get bulkSummaryOpen() {
+			return bulkSummaryOpen;
+		},
+		set bulkSummaryOpen(v) {
+			bulkSummaryOpen = v;
 		},
 		get addPaperTargetThreadId() {
 			return addPaperTargetThreadId;

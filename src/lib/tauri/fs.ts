@@ -33,6 +33,7 @@ export async function ensureRootLayout(): Promise<void> {
 	const root = await papersRoot();
 	const threadsDir = await join(root, 'threads');
 	if (!(await exists(threadsDir))) await mkdir(threadsDir, { recursive: true });
+	await ensureReosMetaDir();
 	const inbox = await join(threadsDir, INBOX_SLUG);
 	if (!(await exists(inbox))) {
 		await mkdir(inbox, { recursive: true });
@@ -63,6 +64,24 @@ export async function threadDir(slug: string): Promise<string> {
 export async function paperDir(threadSlug: string, arxivId: string): Promise<string> {
 	const tdir = await threadDir(threadSlug);
 	return join(tdir, 'papers', arxivId);
+}
+
+// Shared `_reos/` meta folder at the papers root. Hosts files we want the
+// Claude CLI to read across runs (vocabulary.md today, possibly more later).
+// Exposed to the agent via a second `--add-dir` from chat.rs.
+export async function reosMetaDir(): Promise<string> {
+	return join(await papersRoot(), '_reos');
+}
+
+export async function ensureReosMetaDir(): Promise<string> {
+	const dir = await reosMetaDir();
+	if (!(await exists(dir))) await mkdir(dir, { recursive: true });
+	return dir;
+}
+
+export async function writeVocabularyFile(content: string): Promise<void> {
+	const dir = await ensureReosMetaDir();
+	await writeTextFile(await join(dir, 'vocabulary.md'), content);
 }
 
 // --- Thread meta ---

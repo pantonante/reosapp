@@ -3,7 +3,17 @@
 	import { goto } from '$app/navigation';
 	import { ui } from '$lib/stores.svelte';
 	import { rebuildCache } from '$lib/tauri/rebuild';
-	import { Inbox, Library, Layers, Plus, RefreshCw, Settings, FolderPlus } from 'lucide-svelte';
+	import { generateAllMissingSummaries } from '$lib/summary-bulk.svelte';
+	import {
+		Inbox,
+		Library,
+		Layers,
+		Plus,
+		RefreshCw,
+		Settings,
+		FolderPlus,
+		Sparkles
+	} from 'lucide-svelte';
 
 	let value = $state('');
 
@@ -27,6 +37,14 @@
 	const commandActions = [
 		{ label: 'Add paper', icon: Plus, run: () => (ui.addPaperOpen = true) },
 		{ label: 'New thread', icon: FolderPlus, run: () => (ui.newThreadOpen = true) },
+		{
+			label: 'Generate missing summaries',
+			icon: Sparkles,
+			run: () => {
+				ui.bulkSummaryOpen = true;
+				void generateAllMissingSummaries();
+			}
+		},
 		{ label: 'Rebuild cache', icon: RefreshCw, run: () => rebuildCache() }
 	];
 

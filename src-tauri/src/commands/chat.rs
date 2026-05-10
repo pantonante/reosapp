@@ -22,6 +22,10 @@ pub struct ChatStreamArgs {
     /// agent can read/write notes, prior chats, summaries, and other papers in
     /// the same thread via its built-in file tools.
     pub workspace_dir: String,
+    /// Optional absolute path to the shared Re:OS meta folder
+    /// (`<papersRoot>/_reos`). Exposed to the agent via a second `--add-dir`
+    /// so skills can read shared resources like `vocabulary.md`.
+    pub reos_meta_dir: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -83,6 +87,9 @@ pub async fn chat_stream(
         cmd.arg("--system-prompt").arg(system);
     }
     if let Some(dir) = &skills_dir {
+        cmd.arg("--add-dir").arg(dir);
+    }
+    if let Some(dir) = &args.reos_meta_dir {
         cmd.arg("--add-dir").arg(dir);
     }
 
