@@ -14,8 +14,9 @@
 	const reading = $derived(unfiled.filter((p) => p.readingStatus === 'reading'));
 	const unread = $derived(unfiled.filter((p) => p.readingStatus === 'unread'));
 
-	function open(id: string) {
-		ui.openPaper(id);
+	function open(id: string, e?: MouseEvent) {
+		const newTab = !!(e && (e.metaKey || e.ctrlKey));
+		ui.openPaper(id, { replace: !newTab });
 		goto(`/paper/${id}`);
 	}
 
@@ -49,7 +50,7 @@
 			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 				{#each reading as p (p.id)}
 					<div class="group relative">
-						<PaperCard paper={p} onclick={() => open(p.id)} />
+						<PaperCard paper={p} onclick={(e) => open(p.id, e)} />
 						<button
 							class="absolute right-2 top-2 rounded p-1 opacity-0 transition-opacity hover:bg-destructive/15 hover:text-destructive group-hover:opacity-100"
 							onclick={() => deletePaper(p.id)}
@@ -78,7 +79,7 @@
 			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 				{#each unfiled as p (p.id)}
 					<div class="group relative">
-						<PaperCard paper={p} onclick={() => open(p.id)} />
+						<PaperCard paper={p} onclick={(e) => open(p.id, e)} />
 						<button
 							class="absolute right-2 top-2 rounded p-1 opacity-0 transition-opacity hover:bg-destructive/15 hover:text-destructive group-hover:opacity-100"
 							onclick={() => deletePaper(p.id)}

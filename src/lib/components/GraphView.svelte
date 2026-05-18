@@ -221,7 +221,9 @@
 
 		cy.on('tap', 'node', (evt) => {
 			const id = evt.target.id();
-			ui.openPaper(id);
+			const orig = evt.originalEvent as MouseEvent | undefined;
+			const newTab = !!(orig && (orig.metaKey || orig.ctrlKey));
+			ui.openPaper(id, { replace: !newTab });
 			goto(`/paper/${id}`);
 		});
 

@@ -52,8 +52,9 @@
 		return filteredSorted.filter((t) => t.status === status);
 	}
 
-	function open(t: Thread) {
-		ui.openThread(t.id);
+	function open(t: Thread, e?: MouseEvent) {
+		const newTab = !!(e && (e.metaKey || e.ctrlKey));
+		ui.openThread(t.id, { replace: !newTab });
 		goto(`/threads/${t.id}`);
 	}
 </script>
@@ -114,7 +115,7 @@
 			{#each filteredSorted as t (t.id)}
 				<button
 					class="rounded-md border border-border/60 bg-card p-2 text-left transition-colors hover:border-border hover:bg-card/80"
-					onclick={() => open(t)}
+					onclick={(e) => open(t, e)}
 				>
 					<div class="flex items-center gap-2">
 						<span class="h-1.5 w-1.5 rounded-full {t.status === 'active' ? 'bg-accent' : t.status === 'paused' ? 'bg-yellow-500' : 'bg-muted-foreground/60'}"></span>
@@ -138,7 +139,7 @@
 					<div class="space-y-2">
 						{#each byStatus(col.status) as t (t.id)}
 							<Card class="cursor-pointer p-3 transition-colors hover:border-border hover:bg-card/80">
-								<button class="w-full text-left" onclick={() => open(t)}>
+								<button class="w-full text-left" onclick={(e) => open(t, e)}>
 									<div class="line-clamp-2 text-sm font-medium">{t.title}</div>
 									{#if t.question}
 										<div class="mt-1 line-clamp-2 text-xs text-muted-foreground">{t.question}</div>

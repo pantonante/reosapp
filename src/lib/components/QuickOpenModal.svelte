@@ -37,7 +37,7 @@
 			<Command.Root label="Quick open" class="w-full">
 				<Command.Input
 					bind:value
-					placeholder="Open paper or thread as new tab…"
+					placeholder="Open paper or thread…"
 					class="w-full border-0 border-b border-border/60 bg-transparent px-4 py-3 text-sm focus:outline-none"
 				/>
 				<Command.List class="max-h-80 overflow-y-auto p-1">
@@ -56,7 +56,7 @@
 										value={`paper:${paper.title} ${paper.authors.join(' ')} ${paper.arxivId}`}
 										onSelect={() =>
 											run(() => {
-												ui.openPaper(paper.id);
+												ui.openPaper(paper.id, { replace: true });
 												goto(`/paper/${paper.id}`);
 											})}
 										class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-foreground data-[selected]:bg-accent/15 data-[selected]:text-accent"
@@ -83,7 +83,7 @@
 										value={`thread:${thread.title} ${thread.question}`}
 										onSelect={() =>
 											run(() => {
-												ui.openThread(thread.id);
+												ui.openThread(thread.id, { replace: true });
 												goto(`/threads/${thread.id}`);
 											})}
 										class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-foreground data-[selected]:bg-accent/15 data-[selected]:text-accent"

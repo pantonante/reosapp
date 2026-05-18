@@ -273,6 +273,9 @@ export const ui = (() => {
 	let pdfFullscreen = $state(false);
 	let activePaperId = $state<string | null>(null);
 	let activeThreadId = $state<string | null>(null);
+	// Tracks the tab matching the current route, set by the layout effect.
+	// Used to know which tab to replace on a plain (non-cmd) click.
+	let activeTab = $state<TabRef | null>(null);
 
 	// Migrate legacy split-list storage into a unified tabOrder.
 	let tabOrder = $state<TabRef[]>(readLocal<TabRef[]>('reos:tabOrder', []));
@@ -369,6 +372,12 @@ export const ui = (() => {
 		set activeThreadId(v) {
 			activeThreadId = v;
 		},
+		get activeTab() {
+			return activeTab;
+		},
+		set activeTab(v) {
+			activeTab = v;
+		},
 		get openPaperIds() {
 			return paperIds();
 		},
@@ -385,9 +394,21 @@ export const ui = (() => {
 			threadsCompact = v;
 			writeLocal('reos:threadsCompact', v);
 		},
-		openPaper(id: string) {
-			if (!tabOrder.some((t) => t.kind === 'paper' && t.id === id)) {
-				tabOrder = [...tabOrder, { kind: 'paper', id }];
+		openPaper(id: string, opts?: { replace?: boolean }) {
+			const existing = tabOrder.some((t) => t.kind === 'paper' && t.id === id);
+			if (!existing) {
+				const ref: TabRef = { kind: 'paper', id };
+				const replaceIdx =
+					opts?.replace && activeTab
+						? tabOrder.findIndex(
+								(t) => t.kind === activeTab!.kind && t.id === activeTab!.id
+							)
+						: -1;
+				if (replaceIdx !== -1) {
+					tabOrder = tabOrder.map((t, i) => (i === replaceIdx ? ref : t));
+				} else {
+					tabOrder = [...tabOrder, ref];
+				}
 				persistTabs();
 			}
 			activePaperId = id;
@@ -415,14 +436,26 @@ export const ui = (() => {
 			activePaperId = null;
 			persistTabs();
 		},
-		openThread(id: string) {
+		openThread(id: string, opts?: { replace?: boolean }) {
 			if (id === INBOX_THREAD_ID) {
 				// Inbox is sidebar-only; don't materialize it as a tab.
 				activeThreadId = id;
 				return;
 			}
-			if (!tabOrder.some((t) => t.kind === 'thread' && t.id === id)) {
-				tabOrder = [...tabOrder, { kind: 'thread', id }];
+			const existing = tabOrder.some((t) => t.kind === 'thread' && t.id === id);
+			if (!existing) {
+				const ref: TabRef = { kind: 'thread', id };
+				const replaceIdx =
+					opts?.replace && activeTab
+						? tabOrder.findIndex(
+								(t) => t.kind === activeTab!.kind && t.id === activeTab!.id
+							)
+						: -1;
+				if (replaceIdx !== -1) {
+					tabOrder = tabOrder.map((t, i) => (i === replaceIdx ? ref : t));
+				} else {
+					tabOrder = [...tabOrder, ref];
+				}
 				persistTabs();
 			}
 			activeThreadId = id;

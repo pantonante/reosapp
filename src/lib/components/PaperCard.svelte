@@ -7,7 +7,7 @@
 		paper,
 		compact = false,
 		onclick
-	}: { paper: Paper; compact?: boolean; onclick?: () => void } = $props();
+	}: { paper: Paper; compact?: boolean; onclick?: (e: MouseEvent) => void } = $props();
 
 	function statusDot(status: Paper['readingStatus']): string {
 		switch (status) {

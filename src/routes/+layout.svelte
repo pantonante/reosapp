@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
 	import { config, papers, summaryMeta, threads, ui } from '$lib/stores.svelte';
 	import { theme } from '$lib/theme.svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
@@ -26,6 +27,15 @@
 	});
 
 	const needsWizard = $derived(!booting && !config.value.papersDir);
+
+	$effect(() => {
+		const path = page.url.pathname;
+		const paperMatch = path.match(/^\/paper\/(.+)$/);
+		const threadMatch = path.match(/^\/threads\/([^/]+)$/);
+		if (paperMatch) ui.activeTab = { kind: 'paper', id: paperMatch[1] };
+		else if (threadMatch) ui.activeTab = { kind: 'thread', id: threadMatch[1] };
+		else ui.activeTab = null;
+	});
 </script>
 
 {#if booting}

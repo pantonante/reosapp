@@ -5,8 +5,9 @@
 
 	const archived = $derived(threads.items.filter((t) => t.status === 'archived'));
 
-	function open(t: Thread) {
-		ui.openThread(t.id);
+	function open(t: Thread, e?: MouseEvent) {
+		const newTab = !!(e && (e.metaKey || e.ctrlKey));
+		ui.openThread(t.id, { replace: !newTab });
 		goto(`/threads/${t.id}`);
 	}
 </script>
@@ -28,7 +29,7 @@
 			{#each archived as t (t.id)}
 				<button
 					class="rounded-md border border-border/60 bg-card p-2 text-left transition-colors hover:border-border hover:bg-card/80"
-					onclick={() => open(t)}
+					onclick={(e) => open(t, e)}
 				>
 					<div class="flex items-center gap-2">
 						<span class="h-1.5 w-1.5 rounded-full bg-muted-foreground/60"></span>

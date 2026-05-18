@@ -44,8 +44,9 @@
 		return list;
 	});
 
-	function open(id: string) {
-		ui.openPaper(id);
+	function open(id: string, e?: MouseEvent) {
+		const newTab = !!(e && (e.metaKey || e.ctrlKey));
+		ui.openPaper(id, { replace: !newTab });
 		goto(`/paper/${id}`);
 	}
 </script>
@@ -113,7 +114,7 @@
 	{#if view === 'card'}
 		<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
 			{#each filtered as p (p.id)}
-				<PaperCard paper={p} compact onclick={() => open(p.id)} />
+				<PaperCard paper={p} compact onclick={(e) => open(p.id, e)} />
 			{/each}
 		</div>
 	{:else}
@@ -132,7 +133,7 @@
 					{#each filtered as p (p.id)}
 						<tr
 							class="cursor-pointer border-b border-border/40 hover:bg-accent/5"
-							onclick={() => open(p.id)}
+							onclick={(e) => open(p.id, e)}
 						>
 							<td class="px-3 py-2">
 								<div class="font-medium">{p.title}</div>

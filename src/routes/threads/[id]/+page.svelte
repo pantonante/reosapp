@@ -91,8 +91,9 @@
 		goto('/threads');
 	}
 
-	function openPaper(pid: string) {
-		ui.openPaper(pid);
+	function openPaper(pid: string, e?: MouseEvent) {
+		const newTab = !!(e && (e.metaKey || e.ctrlKey));
+		ui.openPaper(pid, { replace: !newTab });
 		goto(`/paper/${pid}`);
 	}
 </script>
@@ -215,7 +216,7 @@
 						{#each papersByStatus(col.status) as p (p?.id)}
 							{#if p}
 								<div class="group relative">
-									<PaperCard paper={p} compact onclick={() => openPaper(p.id)} />
+									<PaperCard paper={p} compact onclick={(e) => openPaper(p.id, e)} />
 									<button
 										class="absolute right-2 top-2 rounded p-1 opacity-0 transition-opacity hover:bg-destructive/15 hover:text-destructive group-hover:opacity-100"
 										onclick={() => removePaper(p.id)}
