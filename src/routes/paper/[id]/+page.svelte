@@ -100,6 +100,33 @@
 		await papers.update(paper.id, { rating: paper.rating === r ? null : r });
 	}
 
+	// Webpage-papers don't carry canonical metadata from an Arxiv API or an
+	// extracted PDF — let the user edit the abstract and published date
+	// directly from the info panel. Drafts re-sync whenever the active paper
+	// changes (route switch, store refresh, etc.).
+	let abstractDraft = $state('');
+	let publishedDateDraft = $state('');
+	let editableSyncedFor = $state<string | null>(null);
+	$effect(() => {
+		if (paper && editableSyncedFor !== paper.id) {
+			abstractDraft = paper.abstract;
+			publishedDateDraft = paper.publishedDate;
+			editableSyncedFor = paper.id;
+		}
+	});
+
+	async function saveAbstract() {
+		if (!paper) return;
+		if (abstractDraft === paper.abstract) return;
+		await papers.update(paper.id, { abstract: abstractDraft });
+	}
+
+	async function savePublishedDate() {
+		if (!paper) return;
+		if (publishedDateDraft === paper.publishedDate) return;
+		await papers.update(paper.id, { publishedDate: publishedDateDraft });
+	}
+
 	let newLink = $state('');
 
 	function normalizeUrl(raw: string): string | null {
@@ -341,7 +368,34 @@
 									</div>
 								</div>
 
-								{#if paper.abstract}
+								{#if isWebpage}
+									<div>
+										<div class="text-[10px] uppercase tracking-wider text-muted-foreground">
+											Published
+										</div>
+										<Input
+											type="date"
+											bind:value={publishedDateDraft}
+											onblur={savePublishedDate}
+											class="mt-2 h-8 text-xs"
+										/>
+									</div>
+								{/if}
+
+								{#if isWebpage}
+									<div>
+										<div class="text-[10px] uppercase tracking-wider text-muted-foreground">
+											Abstract
+										</div>
+										<textarea
+											bind:value={abstractDraft}
+											onblur={saveAbstract}
+											placeholder="What is this page about?"
+											rows="5"
+											class="mt-2 w-full resize-none rounded-md border border-border/60 bg-secondary/30 px-2 py-1.5 text-xs leading-relaxed text-foreground placeholder:text-muted-foreground focus:border-border focus:outline-none focus:ring-1 focus:ring-ring"
+										></textarea>
+									</div>
+								{:else if paper.abstract}
 									<div>
 										<div class="text-[10px] uppercase tracking-wider text-muted-foreground">
 											Abstract
