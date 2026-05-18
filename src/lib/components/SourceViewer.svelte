@@ -8,8 +8,13 @@
 
 	let iframeEl = $state<HTMLIFrameElement | null>(null);
 	let blocked = $state(false);
-	let loadedOnce = $state(false);
 	let reloadKey = $state(0);
+	// Only evaluate framing once, on the first `load`. Many sites navigate the
+	// iframe after initial render (framekiller redirects, infinite scroll, ad
+	// trackers, single-page-app routing) — those secondary loads can be
+	// X-Frame-Options blocked even though the original page rendered fine, and
+	// we shouldn't flip back to the fallback in that case.
+	let initialCheckDone = false;
 
 	const hostname = $derived.by(() => {
 		try {
@@ -21,13 +26,9 @@
 
 	const favicon = $derived(`https://${hostname}/favicon.ico`);
 
-	// Many sites send X-Frame-Options: DENY / Content-Security-Policy frame-ancestors,
-	// which silently produces a blank iframe — the `load` event still fires (in
-	// most browsers it does not), and `contentDocument` is either null or throws
-	// on access. We try both signals:
-	//   • If `load` hasn't fired after ~3.5s, assume the frame was refused.
-	//   • Once `load` fires, try reading `contentDocument`; null/throw = blocked.
-	function checkBlocked() {
+	function onLoad() {
+		if (initialCheckDone) return;
+		initialCheckDone = true;
 		const f = iframeEl;
 		if (!f) return;
 		try {
@@ -36,32 +37,30 @@
 				blocked = true;
 				return;
 			}
-			// If we can read the document but it's a tiny error page (about:blank),
-			// treat that as blocked too.
-			if (doc.location && doc.location.href === 'about:blank') {
+			// `about:blank` after a real URL was requested usually means
+			// X-Frame-Options / CSP frame-ancestors stopped the load.
+			if (doc.location && doc.location.href === 'about:blank' && url !== 'about:blank') {
 				blocked = true;
 			}
 		} catch {
-			// Cross-origin access threw — that's actually the *success* path: the
-			// site loaded but we can't introspect it. Only mark blocked if the
-			// iframe never loaded at all.
+			// Cross-origin access threw — that's the success path: the iframe
+			// loaded a real cross-origin page and the parent isn't allowed to
+			// introspect it.
 		}
-	}
-
-	function onLoad() {
-		loadedOnce = true;
-		checkBlocked();
 	}
 
 	function reload() {
 		blocked = false;
-		loadedOnce = false;
+		initialCheckDone = false;
 		reloadKey += 1;
 	}
 
 	onMount(() => {
 		const timer = setTimeout(() => {
-			if (!loadedOnce) blocked = true;
+			if (initialCheckDone) return;
+			// Load event never fired after ~3.5s — treat as blocked.
+			initialCheckDone = true;
+			blocked = true;
 		}, 3500);
 		return () => clearTimeout(timer);
 	});

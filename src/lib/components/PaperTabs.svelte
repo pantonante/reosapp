@@ -1,8 +1,10 @@
 <script lang="ts">
+	import 'katex/dist/katex.min.css';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { papers, threads, ui, type TabRef } from '$lib/stores.svelte';
 	import { cn } from '$lib/utils/cn';
+	import { renderTitleHtml } from '$lib/utils/render-title';
 	import { X, Layers } from 'lucide-svelte';
 
 	type Tab =
@@ -255,7 +257,7 @@
 				{:else}
 					<Layers class="h-3 w-3" />
 				{/if}
-				<span class="max-w-[16ch] truncate">{tab.title}</span>
+				<span class="tab-title max-w-[16ch] truncate" title={tab.title}>{@html renderTitleHtml(tab.title)}</span>
 				<button
 					type="button"
 					class="rounded-sm p-0.5 opacity-0 transition-opacity hover:bg-foreground/10 group-hover:opacity-100"
@@ -277,6 +279,19 @@
 		{/each}
 	</div>
 {/if}
+
+<style>
+	/* KaTeX defaults to 1.21em and adds a small inline-block which can push the
+	   tab a couple of pixels taller. Pin it to the tab's text size and let it
+	   sit on the text baseline. */
+	.tab-title :global(.katex) {
+		font-size: 1em;
+		line-height: 1;
+	}
+	.tab-title :global(.katex-html) {
+		white-space: nowrap;
+	}
+</style>
 
 {#if menu}
 	{@const m = menu}
