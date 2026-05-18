@@ -33,6 +33,11 @@
 			pdfDoc = await pdfjs.getDocument({ data: bytes }).promise;
 			totalPages = pdfDoc.numPages;
 			currentPage = 1;
+			// New document — drop any stale wrappers from a previous PDF so the
+			// in-place re-render path in renderAll() doesn't try to reuse them.
+			if (canvasContainer) canvasContainer.innerHTML = '';
+			pageObserver?.disconnect();
+			pageObserver = null;
 			await fitToWidth();
 			await renderAll();
 		} catch (e) {
@@ -54,41 +59,91 @@
 	async function renderAll() {
 		if (!pdfDoc || !canvasContainer) return;
 		const token = ++renderToken;
-		canvasContainer.innerHTML = '';
-		pageObserver?.disconnect();
-		pageObserver = new IntersectionObserver(
-			(entries) => {
-				// Pick the most-visible page as the current one.
-				let best: IntersectionObserverEntry | null = null;
-				for (const entry of entries) {
-					if (!entry.isIntersecting) continue;
-					if (!best || entry.intersectionRatio > best.intersectionRatio) best = entry;
-				}
-				if (best) {
-					const n = Number((best.target as HTMLElement).dataset.pageNumber);
-					if (n) currentPage = n;
-				}
-			},
-			{ root: scrollContainer, threshold: [0.25, 0.5, 0.75] }
+
+		// Re-use existing wrappers when the page count matches. This keeps
+		// scrollTop stable across zoom and fullscreen-fit re-renders — wiping
+		// the container collapses content height to 0 and the browser snaps
+		// the user back to the top.
+		const existing = Array.from(
+			canvasContainer.querySelectorAll<HTMLDivElement>('[data-page-number]')
 		);
+		const inPlace = existing.length === totalPages;
+
+		if (!inPlace) {
+			canvasContainer.innerHTML = '';
+			pageObserver?.disconnect();
+			pageObserver = new IntersectionObserver(
+				(entries) => {
+					// Pick the most-visible page as the current one.
+					let best: IntersectionObserverEntry | null = null;
+					for (const entry of entries) {
+						if (!entry.isIntersecting) continue;
+						if (!best || entry.intersectionRatio > best.intersectionRatio) best = entry;
+					}
+					if (best) {
+						const n = Number((best.target as HTMLElement).dataset.pageNumber);
+						if (n) currentPage = n;
+					}
+				},
+				{ root: scrollContainer, threshold: [0.25, 0.5, 0.75] }
+			);
+		}
+
+		// Anchor the scroll position to whichever page was visible before the
+		// re-render. After each iteration mutates a wrapper above the anchor,
+		// re-align scrollTop so the anchor stays visually fixed.
+		const anchorPage = inPlace ? currentPage : 0;
+		const anchorEl = anchorPage > 0 ? existing[anchorPage - 1] : null;
 
 		for (let i = 1; i <= totalPages; i++) {
 			if (token !== renderToken) return;
+			const oldAnchorTop = anchorEl?.offsetTop ?? 0;
+
 			const page = await pdfDoc.getPage(i);
 			const viewport = page.getViewport({ scale });
-			const wrapper = document.createElement('div');
-			wrapper.dataset.pageNumber = String(i);
-			wrapper.className = 'mx-auto';
-			wrapper.style.width = `${viewport.width}px`;
-			const canvas = document.createElement('canvas');
-			canvas.width = viewport.width;
-			canvas.height = viewport.height;
-			canvas.className = 'rounded shadow-lg';
+
+			let wrapper: HTMLDivElement;
+			let canvas: HTMLCanvasElement;
+			if (inPlace) {
+				wrapper = existing[i - 1];
+				canvas = wrapper.querySelector('canvas')!;
+			} else {
+				wrapper = document.createElement('div');
+				wrapper.dataset.pageNumber = String(i);
+				wrapper.className = 'mx-auto';
+				canvas = document.createElement('canvas');
+				canvas.className = 'rounded shadow-lg';
+				wrapper.appendChild(canvas);
+				canvasContainer.appendChild(wrapper);
+				pageObserver!.observe(wrapper);
+			}
+
+			// HiDPI/Retina: render to a backing-store-sized canvas so the
+			// rasterized PDF matches the screen's physical pixels, then let CSS
+			// scale it back down to the logical viewport size. Without this the
+			// browser upscales a 1x canvas on a 2x display and the result looks
+			// soft.
+			const outputScale = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+			const cssWidth = Math.floor(viewport.width);
+			const cssHeight = Math.floor(viewport.height);
+			wrapper.style.width = `${cssWidth}px`;
+			canvas.width = Math.floor(viewport.width * outputScale);
+			canvas.height = Math.floor(viewport.height * outputScale);
+			canvas.style.width = `${cssWidth}px`;
+			canvas.style.height = `${cssHeight}px`;
 			const ctx = canvas.getContext('2d');
-			wrapper.appendChild(canvas);
-			canvasContainer.appendChild(wrapper);
-			pageObserver.observe(wrapper);
-			await page.render({ canvasContext: ctx, viewport }).promise;
+			if (ctx) {
+				const transform =
+					outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined;
+				await page.render({ canvasContext: ctx, viewport, transform }).promise;
+			}
+
+			// Keep the anchor pinned: any size change above it shifts its
+			// offsetTop, so add the delta to scrollTop to compensate.
+			if (anchorEl && scrollContainer && i < anchorPage) {
+				const delta = anchorEl.offsetTop - oldAnchorTop;
+				if (delta !== 0) scrollContainer.scrollTop += delta;
+			}
 		}
 	}
 
@@ -128,6 +183,26 @@
 			lastLoadedPath = path;
 			loadPdf();
 		}
+	});
+
+	// Refit width when the user toggles fullscreen — the container changes
+	// width and the existing scale would leave the PDF either tiny (entering
+	// fullscreen from a narrow pane) or clipped (exiting fullscreen).
+	let lastFullscreen = $state<boolean | null>(null);
+	$effect(() => {
+		const fs = ui.pdfFullscreen;
+		if (lastFullscreen === null) {
+			lastFullscreen = fs;
+			return;
+		}
+		if (fs === lastFullscreen) return;
+		lastFullscreen = fs;
+		if (!pdfDoc) return;
+		// Defer to next frame so the layout has settled at the new width.
+		requestAnimationFrame(async () => {
+			await fitToWidth();
+			await renderAll();
+		});
 	});
 
 	onDestroy(() => {
