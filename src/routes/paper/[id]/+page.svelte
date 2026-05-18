@@ -4,15 +4,17 @@
 	import { papers, threads, ui } from '$lib/stores.svelte';
 	import { Button, Badge, Textarea, Separator, Dialog, Input } from '$lib/components/ui';
 	import PdfViewer from '$lib/components/PdfViewer.svelte';
+	import SourceViewer from '$lib/components/SourceViewer.svelte';
 	import PaperChat from '$lib/components/PaperChat.svelte';
 	import PaperSummary from '$lib/components/PaperSummary.svelte';
 	import { revealInFinder, openExternal } from '$lib/tauri/shell';
 	import { readNotes, writeNotes } from '$lib/tauri/fs';
-	import { ExternalLink, FolderOpen, Star, FileText, Sparkles, MessageSquare, PanelRight, Inbox, Check, ArrowRightLeft, Github, Trash2 } from 'lucide-svelte';
+	import { ExternalLink, FolderOpen, Star, FileText, Globe, Sparkles, MessageSquare, PanelRight, Inbox, Check, ArrowRightLeft, Github, Trash2 } from 'lucide-svelte';
 	import type { ReadingStatus } from '$lib/types';
 
 	const id = $derived(page.params.id!);
 	const paper = $derived(papers.get(id));
+	const isWebpage = $derived(!!paper?.sourceUrl && !paper?.pdfPath);
 
 	type MainView = 'pdf' | 'summary' | 'chat';
 	type SidePanel = 'info' | 'notes';
@@ -167,11 +169,15 @@
 		}
 	}
 
-	const mainTabs: { id: MainView; label: string; icon: typeof FileText }[] = [
-		{ id: 'pdf', label: 'PDF', icon: FileText },
+	const mainTabs = $derived<{ id: MainView; label: string; icon: typeof FileText }[]>([
+		{
+			id: 'pdf',
+			label: isWebpage ? 'Source' : 'PDF',
+			icon: isWebpage ? Globe : FileText
+		},
 		{ id: 'summary', label: 'Summary', icon: Sparkles },
 		{ id: 'chat', label: 'Chat', icon: MessageSquare }
-	];
+	]);
 </script>
 
 {#if !paper}
@@ -223,7 +229,11 @@
 				<!-- All three views are mounted; we toggle visibility so streams and
 				     PDF viewer state survive view switches. -->
 				<div class="absolute inset-0" class:hidden={mainView !== 'pdf'}>
-					<PdfViewer path={paper.pdfPath} />
+					{#if isWebpage}
+						<SourceViewer url={paper.sourceUrl!} />
+					{:else}
+						<PdfViewer path={paper.pdfPath} />
+					{/if}
 				</div>
 				<div class="absolute inset-0 bg-background" class:hidden={mainView !== 'summary'}>
 					<PaperSummary {paper} />
@@ -411,14 +421,26 @@
 											Arxiv
 										</Button>
 									{/if}
-									<Button
-										size="sm"
-										variant="outline"
-										onclick={() => revealInFinder(paper.pdfPath)}
-									>
-										<FolderOpen class="h-3.5 w-3.5" />
-										Reveal in Finder
-									</Button>
+									{#if paper.sourceUrl}
+										<Button
+											size="sm"
+											variant="outline"
+											onclick={() => openExternal(paper.sourceUrl!)}
+										>
+											<Globe class="h-3.5 w-3.5" />
+											Open source
+										</Button>
+									{/if}
+									{#if paper.pdfPath}
+										<Button
+											size="sm"
+											variant="outline"
+											onclick={() => revealInFinder(paper.pdfPath)}
+										>
+											<FolderOpen class="h-3.5 w-3.5" />
+											Reveal in Finder
+										</Button>
+									{/if}
 								</div>
 							</div>
 						{:else if panel === 'notes'}

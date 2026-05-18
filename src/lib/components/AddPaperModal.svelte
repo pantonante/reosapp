@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { Button, Dialog, Input } from '$lib/components/ui';
 	import { extractArxivId, fetchArxivPaper, downloadArxivPdf } from '$lib/arxiv';
+	import { prepareWebSource } from '$lib/web';
 	import { writePaperPdf, removePaperFolder } from '$lib/tauri/fs';
-	import { extractPdfMetadata } from '$lib/tauri/extract';
+	import { extractPdfMetadata, extractWebpageMetadata } from '$lib/tauri/extract';
 	import { papers, threads, ui } from '$lib/stores.svelte';
 	import { goto } from '$app/navigation';
-	import { Loader2, Link2, Upload, Sparkles, FileText } from 'lucide-svelte';
+	import { Loader2, Link2, Upload, Sparkles, FileText, Globe } from 'lucide-svelte';
 
 	let raw = $state('');
 	let busy = $state(false);
@@ -14,12 +15,15 @@
 
 	// PDF + extraction state
 	type Stage = 'idle' | 'extracting' | 'review';
+	type SourceKind = 'pdf' | 'web';
 	let stage = $state<Stage>('idle');
 	let extractError = $state<string | null>(null);
+	let pendingSourceKind = $state<SourceKind>('pdf');
 	let pendingPdfPath = $state<string | null>(null);
 	let pendingArxivId = $state<string | null>(null);
 	let pendingThreadSlug = $state<string | null>(null);
 	let pendingFileName = $state('');
+	let pendingSourceUrl = $state<string | null>(null);
 
 	// Editable extracted metadata
 	let metaTitle = $state('');
@@ -39,10 +43,12 @@
 		dragActive = false;
 		stage = 'idle';
 		extractError = null;
+		pendingSourceKind = 'pdf';
 		pendingPdfPath = null;
 		pendingArxivId = null;
 		pendingThreadSlug = null;
 		pendingFileName = '';
+		pendingSourceUrl = null;
 		metaTitle = '';
 		metaAuthors = '';
 		metaYear = '';
@@ -68,12 +74,30 @@
 		});
 	}
 
-	async function importFromArxiv() {
-		const arxivId = extractArxivId(raw);
-		if (!arxivId) {
-			error = 'Could not parse an Arxiv ID from that input.';
+	async function importFromInput() {
+		const trimmed = raw.trim();
+		if (!trimmed) return;
+		// If the input is a non-arxiv URL, take the webpage path even when the
+		// Arxiv regex happens to match a number pattern inside the URL (e.g.
+		// `example.com/2024.0123/...`). Only short-circuit to Arxiv when the
+		// URL host is arxiv.org or the input isn't a URL at all.
+		const prepared = await prepareWebSource(trimmed);
+		const isArxivHost = prepared
+			? /(^|\.)arxiv\.org$/i.test(new URL(prepared.normalizedUrl).hostname)
+			: false;
+		const arxivId = extractArxivId(trimmed);
+		if (arxivId && (isArxivHost || !prepared)) {
+			await importFromArxivId(arxivId);
 			return;
 		}
+		if (prepared) {
+			await importFromWebpage(prepared.normalizedUrl, prepared.webId);
+			return;
+		}
+		error = 'Could not parse an Arxiv ID or URL from that input.';
+	}
+
+	async function importFromArxivId(arxivId: string) {
 		const existing = papers.items.find((p) => p.arxivId === arxivId);
 		if (existing) {
 			ui.addPaperOpen = false;
@@ -97,6 +121,43 @@
 		}
 	}
 
+	async function importFromWebpage(normalizedUrl: string, webId: string) {
+		// Dedup by normalized URL — opening Add Paper with a URL already in the
+		// library should just jump to the existing paper.
+		const existing = papers.items.find((p) => p.sourceUrl === normalizedUrl);
+		if (existing) {
+			ui.addPaperOpen = false;
+			goto(`/paper/${existing.id}`);
+			return;
+		}
+
+		error = null;
+		extractError = null;
+		const slug = targetThreadId;
+		pendingSourceKind = 'web';
+		pendingArxivId = webId;
+		pendingThreadSlug = slug;
+		pendingSourceUrl = normalizedUrl;
+		pendingFileName = new URL(normalizedUrl).hostname;
+		pendingPdfPath = null;
+		metaTitle = pendingFileName;
+		metaAuthors = '';
+		metaYear = '';
+		metaAbstract = '';
+		stage = 'extracting';
+
+		try {
+			const meta = await extractWebpageMetadata(normalizedUrl);
+			if (meta.title) metaTitle = meta.title;
+			metaAuthors = (meta.authors ?? []).join(', ');
+			metaYear = meta.year ?? '';
+			metaAbstract = meta.abstract ?? '';
+		} catch (extractErr) {
+			extractError = extractErr instanceof Error ? extractErr.message : String(extractErr);
+		}
+		stage = 'review';
+	}
+
 	async function handleDrop(e: DragEvent) {
 		e.preventDefault();
 		dragActive = false;
@@ -117,10 +178,12 @@
 			const slug = targetThreadId;
 			const pdfPath = await writePaperPdf(slug, arxivId, buf);
 
+			pendingSourceKind = 'pdf';
 			pendingPdfPath = pdfPath;
 			pendingArxivId = arxivId;
 			pendingThreadSlug = slug;
 			pendingFileName = file.name;
+			pendingSourceUrl = null;
 
 			// Pre-fill title from filename so the user has *something* useful even
 			// if extraction fails.
@@ -148,7 +211,9 @@
 	}
 
 	async function confirmPdfPaper() {
-		if (!pendingPdfPath || !pendingArxivId || !pendingThreadSlug) return;
+		if (!pendingArxivId || !pendingThreadSlug) return;
+		if (pendingSourceKind === 'pdf' && !pendingPdfPath) return;
+		if (pendingSourceKind === 'web' && !pendingSourceUrl) return;
 		busy = true;
 		error = null;
 		try {
@@ -159,7 +224,10 @@
 				.filter(Boolean);
 			const yearTrim = metaYear.trim();
 			const publishedDate = /^\d{4}$/.test(yearTrim) ? `${yearTrim}-01-01` : '';
-			const fallbackTitle = pendingFileName.replace(/\.pdf$/i, '');
+			const fallbackTitle =
+				pendingSourceKind === 'web'
+					? pendingFileName
+					: pendingFileName.replace(/\.pdf$/i, '');
 			await papers.add({
 				id,
 				arxivId: pendingArxivId,
@@ -171,8 +239,9 @@
 				tags: [],
 				readingStatus: 'unread',
 				rating: null,
-				pdfPath: pendingPdfPath,
+				pdfPath: pendingSourceKind === 'pdf' ? pendingPdfPath! : '',
 				arxivUrl: '',
+				sourceUrl: pendingSourceKind === 'web' ? pendingSourceUrl! : undefined,
 				addedAt: new Date().toISOString(),
 				links: [],
 				threadId: pendingThreadSlug
@@ -203,8 +272,10 @@
 	description={stage === 'review'
 		? 'AI-extracted metadata. Edit anything that looks off, then add.'
 		: stage === 'extracting'
-			? 'Reading the PDF and pulling out metadata…'
-			: 'Paste an arxiv link or ID, or drop a PDF file.'}
+			? pendingSourceKind === 'web'
+				? 'Fetching the page and pulling out metadata…'
+				: 'Reading the PDF and pulling out metadata…'
+			: 'Paste an Arxiv link/ID, a webpage URL, or drop a PDF.'}
 	onOpenChange={(open) => {
 		if (!open) {
 			// Closing during review/extracting drops the temp paper folder.
@@ -224,7 +295,11 @@
 			<p class="text-xs">This usually takes 10–30 seconds.</p>
 			{#if pendingFileName}
 				<p class="mt-2 inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-					<FileText class="h-3 w-3" />
+					{#if pendingSourceKind === 'web'}
+						<Globe class="h-3 w-3" />
+					{:else}
+						<FileText class="h-3 w-3" />
+					{/if}
 					<span class="font-mono">{pendingFileName}</span>
 				</p>
 			{/if}
@@ -240,7 +315,7 @@
 			{:else}
 				<p class="inline-flex items-center gap-1.5 text-[11px] text-accent">
 					<Sparkles class="h-3 w-3" />
-					Pre-filled from the PDF — review and edit.
+					Pre-filled from the {pendingSourceKind === 'web' ? 'webpage' : 'PDF'} — review and edit.
 				</p>
 			{/if}
 
@@ -279,12 +354,17 @@
 					<span
 						class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground"
 					>
-						File
+						{pendingSourceKind === 'web' ? 'Source' : 'File'}
 					</span>
 					<div
 						class="flex h-9 items-center gap-1.5 truncate rounded-md border border-border/60 bg-secondary/30 px-3 font-mono text-xs text-muted-foreground"
+						title={pendingSourceUrl ?? pendingFileName}
 					>
-						<FileText class="h-3 w-3 shrink-0" />
+						{#if pendingSourceKind === 'web'}
+							<Globe class="h-3 w-3 shrink-0" />
+						{:else}
+							<FileText class="h-3 w-3 shrink-0" />
+						{/if}
 						<span class="truncate">{pendingFileName}</span>
 					</div>
 				</div>
@@ -325,18 +405,18 @@
 			<div class="space-y-2">
 				<div class="flex items-center gap-2 text-xs text-muted-foreground">
 					<Link2 class="h-3.5 w-3.5" />
-					Arxiv link or ID
+					Arxiv link/ID or webpage URL
 				</div>
 				<div class="flex gap-2">
 					<Input
 						bind:value={raw}
-						placeholder="2604.07209 or https://arxiv.org/abs/…"
+						placeholder="2604.07209, arxiv.org/abs/…, or https://…"
 						class="font-mono text-xs"
 						onkeydown={(e: KeyboardEvent) => {
-							if (e.key === 'Enter') importFromArxiv();
+							if (e.key === 'Enter') importFromInput();
 						}}
 					/>
-					<Button onclick={importFromArxiv} disabled={busy || !raw.trim()}>
+					<Button onclick={importFromInput} disabled={busy || !raw.trim()}>
 						{#if busy}
 							<Loader2 class="h-4 w-4 animate-spin" />
 						{/if}

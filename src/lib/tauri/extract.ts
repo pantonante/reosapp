@@ -12,3 +12,9 @@ export async function extractPdfMetadata(pdfPath: string): Promise<ExtractedMeta
 		args: { pdfPath }
 	});
 }
+
+export async function extractWebpageMetadata(url: string): Promise<ExtractedMetadata> {
+	return await invoke<ExtractedMetadata>('extract_webpage_metadata', {
+		args: { url }
+	});
+}

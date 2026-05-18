@@ -33,6 +33,7 @@ pub fn run() {
             commands::chat::chat_stream,
             commands::chat::chat_cancel,
             commands::extract::extract_pdf_metadata,
+            commands::extract::extract_webpage_metadata,
             commands::finder::reveal_in_finder,
         ])
         .run(tauri::generate_context!())

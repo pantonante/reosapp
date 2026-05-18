@@ -139,6 +139,7 @@ export async function writePaperMeta(threadSlug: string, p: Paper): Promise<void
 		arxivUrl: p.arxivUrl,
 		addedAt: p.addedAt,
 		links: p.links,
+		sourceUrl: p.sourceUrl,
 		orderInThread: p.orderInThread,
 		contextNote: p.contextNote
 	};

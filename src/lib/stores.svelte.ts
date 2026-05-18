@@ -76,7 +76,10 @@ function createPapersStore() {
 			const fromSlug = current.threadId ?? INBOX_SLUG;
 			const toSlug = toThreadId || INBOX_SLUG;
 			if (fromSlug === toSlug) return;
-			const newPdfPath = await movePaperFolder(fromSlug, toSlug, current.arxivId);
+			const candidatePdfPath = await movePaperFolder(fromSlug, toSlug, current.arxivId);
+			// Webpage-papers have no `paper.pdf` on disk — keep pdfPath empty
+			// rather than pointing at a nonexistent file in the new thread.
+			const newPdfPath = current.pdfPath ? candidatePdfPath : '';
 			for (const t of threads.items) {
 				if (t.id === toSlug) continue;
 				if (t.papers.some((p) => p.paperId === id)) {

@@ -42,6 +42,8 @@
 	const job: SummaryJob | undefined = $derived(getJob(paper.id));
 	const streaming = $derived(job?.status === 'streaming');
 	const jobError = $derived(job?.status === 'error' ? job : null);
+	const canSummarize = $derived(!!paper.pdfPath || !!paper.sourceUrl);
+	const isWebpage = $derived(!paper.pdfPath && !!paper.sourceUrl);
 
 	let tickInterval: ReturnType<typeof setInterval> | null = null;
 	$effect(() => {
@@ -211,7 +213,7 @@
 			</span>
 			<div class="flex gap-1">
 				<Button size="sm" variant="ghost" onclick={dismissError}>Dismiss</Button>
-				<Button size="sm" variant="ghost" onclick={generate} disabled={!paper.pdfPath}>
+				<Button size="sm" variant="ghost" onclick={generate} disabled={!canSummarize}>
 					<RefreshCw class="h-3 w-3" />
 					Retry
 				</Button>
@@ -269,7 +271,7 @@
 	{:else if summary}
 		<div class="flex items-center justify-between border-b border-border/60 px-3 py-1.5">
 			<span class="text-[10px] uppercase tracking-wider text-muted-foreground">Summary</span>
-			<Button size="sm" variant="ghost" onclick={generate} disabled={!paper.pdfPath}>
+			<Button size="sm" variant="ghost" onclick={generate} disabled={!canSummarize}>
 				<RefreshCw class="h-3 w-3" />
 				Regenerate
 			</Button>
@@ -314,15 +316,23 @@
 		>
 			<Sparkles class="h-6 w-6 text-muted-foreground" />
 			<p class="text-xs text-muted-foreground">
-				No summary yet. Generate a builder-oriented review of this paper.
+				{#if isWebpage}
+					No summary yet. Generate a builder-oriented review of this webpage.
+				{:else}
+					No summary yet. Generate a builder-oriented review of this paper.
+				{/if}
 			</p>
-			<Button size="sm" onclick={generate} disabled={!paper.pdfPath}>
+			<Button size="sm" onclick={generate} disabled={!canSummarize}>
 				<Sparkles class="h-3.5 w-3.5" />
 				Generate summary
 			</Button>
 			<p class="mt-2 text-[10px] text-muted-foreground">
-				Powered by your local <code class="font-mono">claude</code> CLI · uses the
-				<code class="font-mono">summarize-paper</code> skill. Multiple papers can summarize in parallel.
+				{#if isWebpage}
+					Powered by your local <code class="font-mono">claude</code> CLI · fetches the page live via WebFetch.
+				{:else}
+					Powered by your local <code class="font-mono">claude</code> CLI · uses the
+					<code class="font-mono">summarize-paper</code> skill. Multiple papers can summarize in parallel.
+				{/if}
 			</p>
 		</div>
 	{/if}

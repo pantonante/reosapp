@@ -148,7 +148,8 @@ export async function cancelJob(paperId: string): Promise<void> {
 }
 
 export async function startSummary(paper: Paper): Promise<SummaryJob | null> {
-	if (!paper.pdfPath) return null;
+	// A paper needs either a PDF on disk or a source URL to be summarizable.
+	if (!paper.pdfPath && !paper.sourceUrl) return null;
 	if (isRunning(paper.id)) return jobs[paper.id];
 
 	await ensureListener();
@@ -190,9 +191,19 @@ export async function startSummary(paper: Paper): Promise<SummaryJob | null> {
 		console.warn('[summary-jobs] failed to write vocabulary.md', e);
 	}
 
-	const prompt = vocabularyPath
-		? `Summarize this paper. Library vocabulary: ${vocabularyPath}`
-		: 'Summarize this paper.';
+	// Branch on source type. For webpage-papers we can't rely on the
+	// `summarize-paper` skill (it expects a `paper.pdf` in CWD), so the prompt
+	// explicitly directs the agent to WebFetch the page and write
+	// `summary.md` with the same YAML frontmatter shape the rest of the app
+	// expects (topics/domains/keywords).
+	const isWebpage = !paper.pdfPath && !!paper.sourceUrl;
+	const prompt = isWebpage
+		? vocabularyPath
+			? `Summarize the webpage at ${paper.sourceUrl}. Use WebFetch to read it, then write summary.md in the current directory. Begin the file with YAML frontmatter containing three arrays — topics, domains, keywords — each lowercase-hyphenated tags. Library vocabulary: ${vocabularyPath}`
+			: `Summarize the webpage at ${paper.sourceUrl}. Use WebFetch to read it, then write summary.md in the current directory. Begin the file with YAML frontmatter containing three arrays — topics, domains, keywords — each lowercase-hyphenated tags.`
+		: vocabularyPath
+			? `Summarize this paper. Library vocabulary: ${vocabularyPath}`
+			: 'Summarize this paper.';
 
 	const args: ChatStreamArgs = {
 		sessionId,

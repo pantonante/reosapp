@@ -4,7 +4,7 @@ import type { Paper, SummaryMeta, Thread, ThreadPaper } from '$lib/types';
 let _db: Database | null = null;
 let _ready: Promise<Database> | null = null;
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS papers (
@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS papers (
 	arxivUrl TEXT NOT NULL,
 	addedAt TEXT NOT NULL,
 	links TEXT NOT NULL DEFAULT '[]',
+	sourceUrl TEXT NOT NULL DEFAULT '',
 	threadId TEXT,
 	orderInThread INTEGER,
 	contextNote TEXT
@@ -73,6 +74,14 @@ export async function getDb(): Promise<Database> {
 		for (const stmt of SCHEMA_SQL.split(';').map((s) => s.trim()).filter(Boolean)) {
 			await db.execute(stmt);
 		}
+		// Best-effort additive migrations. CREATE TABLE IF NOT EXISTS leaves
+		// pre-existing tables untouched, so new columns need an explicit ADD.
+		// SQLite raises "duplicate column" if it's already there — swallow it.
+		try {
+			await db.execute(`ALTER TABLE papers ADD COLUMN sourceUrl TEXT NOT NULL DEFAULT ''`);
+		} catch {
+			// already migrated
+		}
 		await db.execute('INSERT OR REPLACE INTO _meta(key, value) VALUES(?, ?)', [
 			'schemaVersion',
 			String(SCHEMA_VERSION)
@@ -99,6 +108,7 @@ function rowToPaper(row: Record<string, unknown>): Paper {
 		arxivUrl: (row.arxivUrl as string) ?? '',
 		addedAt: (row.addedAt as string) ?? new Date().toISOString(),
 		links: JSON.parse((row.links as string) || '[]'),
+		sourceUrl: (row.sourceUrl as string) || undefined,
 		threadId: (row.threadId as string) ?? undefined,
 		orderInThread: row.orderInThread == null ? undefined : Number(row.orderInThread),
 		contextNote: (row.contextNote as string) ?? undefined
@@ -148,8 +158,8 @@ export const db = {
 	async addPaper(p: Paper): Promise<void> {
 		const conn = await getDb();
 		await conn.execute(
-			`INSERT INTO papers(id, arxivId, title, authors, abstract, publishedDate, categories, tags, readingStatus, rating, pdfPath, arxivUrl, addedAt, links, threadId, orderInThread, contextNote)
-			VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			`INSERT INTO papers(id, arxivId, title, authors, abstract, publishedDate, categories, tags, readingStatus, rating, pdfPath, arxivUrl, addedAt, links, sourceUrl, threadId, orderInThread, contextNote)
+			VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				title = excluded.title,
 				authors = excluded.authors,
@@ -162,6 +172,7 @@ export const db = {
 				pdfPath = excluded.pdfPath,
 				arxivUrl = excluded.arxivUrl,
 				links = excluded.links,
+				sourceUrl = excluded.sourceUrl,
 				threadId = excluded.threadId,
 				orderInThread = excluded.orderInThread,
 				contextNote = excluded.contextNote`,
@@ -180,6 +191,7 @@ export const db = {
 				p.arxivUrl,
 				p.addedAt,
 				JSON.stringify(p.links ?? []),
+				p.sourceUrl ?? '',
 				p.threadId ?? null,
 				p.orderInThread ?? null,
 				p.contextNote ?? null

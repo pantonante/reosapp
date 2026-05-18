@@ -16,6 +16,8 @@ export interface Paper {
 	arxivUrl: string;
 	addedAt: string;
 	links: string[];
+	/** For webpage-papers: the original source URL (normalized). Absent for Arxiv/PDF papers. */
+	sourceUrl?: string;
 	/** Slug of the thread that owns this paper on disk. */
 	threadId?: string;
 	/** Order within the owning thread. */

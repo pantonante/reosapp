@@ -7,6 +7,7 @@ import {
 	readThreadMeta,
 	ensureRootLayout
 } from './fs';
+import { exists } from '@tauri-apps/plugin-fs';
 import type { Paper, Thread } from '$lib/types';
 
 export interface RebuildResult {
@@ -32,7 +33,11 @@ export async function rebuildCache(): Promise<RebuildResult> {
 			const arxivId = arxivIds[i];
 			const pmeta = await readPaperMeta(slug, arxivId);
 			if (!pmeta) continue;
-			const pdfPath = await paperPdfPath(slug, arxivId);
+			// Webpage-papers have no paper.pdf on disk — only record pdfPath if
+			// the file actually exists, otherwise leave it empty so the UI
+			// branches into the webpage code paths.
+			const candidatePdf = await paperPdfPath(slug, arxivId);
+			const pdfPath = (await exists(candidatePdf)) ? candidatePdf : '';
 			const paper: Paper = {
 				id: pmeta.id,
 				arxivId: pmeta.arxivId,
@@ -47,6 +52,7 @@ export async function rebuildCache(): Promise<RebuildResult> {
 				arxivUrl: pmeta.arxivUrl,
 				addedAt: pmeta.addedAt,
 				links: pmeta.links,
+				sourceUrl: pmeta.sourceUrl,
 				pdfPath,
 				threadId: tmeta.id,
 				orderInThread: pmeta.orderInThread ?? i,

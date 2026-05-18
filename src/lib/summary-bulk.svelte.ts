@@ -41,7 +41,8 @@ export function bulkSummaryState(): BulkState {
 async function findPapersWithoutSummary(): Promise<Paper[]> {
 	const out: Paper[] = [];
 	for (const p of papers.items) {
-		if (!p.pdfPath) continue;
+		// Skip papers we can't summarize: no PDF on disk and no source URL.
+		if (!p.pdfPath && !p.sourceUrl) continue;
 		if (isRunning(p.id)) continue;
 		const slug = p.threadId ?? INBOX_SLUG;
 		const text = await readPaperSummary(slug, p.arxivId);

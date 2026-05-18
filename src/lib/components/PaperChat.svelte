@@ -149,10 +149,18 @@
 
 		const workspaceDir = await threadDir(threadSlug());
 
+		// For webpage-papers there is no PDF on disk; instead, hand Claude the
+		// source URL in the prompt and rely on its built-in WebFetch tool.
+		const pdfPaths = paper.pdfPath ? [paper.pdfPath] : [];
+		const finalPrompt =
+			!paper.pdfPath && paper.sourceUrl
+				? `Source URL: ${paper.sourceUrl}\nUse WebFetch to read the page if you need its content to answer.\n\n${prompt}`
+				: prompt;
+
 		await startChatStream({
 			sessionId,
-			prompt,
-			pdfPaths: paper.pdfPath ? [paper.pdfPath] : [],
+			prompt: finalPrompt,
+			pdfPaths,
 			workspaceDir
 		});
 	}
