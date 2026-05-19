@@ -45,11 +45,7 @@ pub async fn extract_pdf_metadata(args: ExtractPdfArgs) -> Result<ExtractedMetad
         .arg("--")
         .arg(&prompt);
 
-    // Match chat_stream's billing-safety: never silently use API keys when the
-    // user has a Max OAuth session.
-    cmd.env_remove("ANTHROPIC_API_KEY");
-    cmd.env_remove("ANTHROPIC_AUTH_TOKEN");
-    cmd.env_remove("CLAUDE_CODE_OAUTH_TOKEN");
+    super::claude_env::prepare(&mut cmd);
 
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -130,11 +126,7 @@ pub async fn extract_webpage_metadata(
         .arg("--")
         .arg(&prompt);
 
-    // Match chat_stream's billing-safety: never silently use API keys when the
-    // user has a Max OAuth session.
-    cmd.env_remove("ANTHROPIC_API_KEY");
-    cmd.env_remove("ANTHROPIC_AUTH_TOKEN");
-    cmd.env_remove("CLAUDE_CODE_OAUTH_TOKEN");
+    super::claude_env::prepare(&mut cmd);
 
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())

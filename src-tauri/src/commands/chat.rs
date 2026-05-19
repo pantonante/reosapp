@@ -108,14 +108,7 @@ pub async fn chat_stream(
     // notes.md, summary.md, prior chat.jsonl files etc. in the right place.
     cmd.current_dir(&args.workspace_dir);
 
-    // Subscription billing safety: the Agent SDK and Claude CLI both prefer
-    // `ANTHROPIC_API_KEY` over the user's stored Max OAuth token if the env
-    // var is set. We never want to silently bill against the API. Strip it
-    // (and a few siblings) from the child env regardless of how Re:OS was
-    // launched.
-    cmd.env_remove("ANTHROPIC_API_KEY");
-    cmd.env_remove("ANTHROPIC_AUTH_TOKEN");
-    cmd.env_remove("CLAUDE_CODE_OAUTH_TOKEN");
+    super::claude_env::prepare(&mut cmd);
 
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -124,6 +117,11 @@ pub async fn chat_stream(
 
     // Diagnostic: print everything we're about to spawn. Goes to the terminal
     // running `npm run tauri dev`, so the user can see it without devtools.
+    let child_path = cmd
+        .as_std()
+        .get_envs()
+        .find_map(|(k, v)| (k == "PATH").then(|| v.map(|v| v.to_string_lossy().into_owned())))
+        .flatten();
     eprintln!(
         "[chat_stream:{session_id}] spawn: claude {:?}\n  cwd: {}\n  HOME={:?} PATH={:?}",
         cmd.as_std()
@@ -132,7 +130,7 @@ pub async fn chat_stream(
             .collect::<Vec<_>>(),
         args.workspace_dir,
         std::env::var("HOME").ok(),
-        std::env::var("PATH").ok(),
+        child_path,
     );
 
     let mut child = cmd.spawn().map_err(|e| {
