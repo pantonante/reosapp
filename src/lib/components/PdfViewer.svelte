@@ -1,11 +1,31 @@
+<script module lang="ts">
+	// Cache of fully-loaded PDFs, keyed by paper id. When the route unmounts on
+	// tab switch we stash the parsed pdf doc + rendered canvas DOM here so a
+	// remount can reattach them instantly instead of re-reading and rasterizing
+	// every page. Lives for the app session; cleared on app restart.
+	type CachedPdf = {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		pdfDoc: any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		pdfjsLib: any;
+		fragment: DocumentFragment;
+		path: string;
+		scale: number;
+		scrollTop: number;
+		totalPages: number;
+		currentPage: number;
+	};
+	const pdfCache = new Map<string, CachedPdf>();
+</script>
+
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount, onDestroy, tick } from 'svelte';
 	import { readFile } from '@tauri-apps/plugin-fs';
 	import { Button } from '$lib/components/ui';
 	import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2, Minimize2 } from 'lucide-svelte';
 	import { ui } from '$lib/stores.svelte';
 
-	let { path }: { path: string } = $props();
+	let { path, paperId }: { path: string; paperId?: string } = $props();
 
 	let scrollContainer = $state<HTMLDivElement | undefined>();
 	let canvasContainer = $state<HTMLDivElement | undefined>();
@@ -18,14 +38,96 @@
 	let scale = $state(1.2);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+	let restored = $state(false);
 
 	let pageObserver: IntersectionObserver | null = null;
 	let renderToken = 0;
 
+	function posKey(id: string) {
+		return `reos:pdfPos:${id}`;
+	}
+	function readSavedPage(id: string): number | null {
+		try {
+			const raw = localStorage.getItem(posKey(id));
+			if (!raw) return null;
+			const parsed = JSON.parse(raw) as { page?: number };
+			return typeof parsed.page === 'number' ? parsed.page : null;
+		} catch {
+			return null;
+		}
+	}
+	function writeSavedPage(id: string, page: number) {
+		try {
+			localStorage.setItem(posKey(id), JSON.stringify({ page }));
+		} catch {
+			// quota or storage unavailable — ignore
+		}
+	}
+	function scrollToPageInstant(n: number) {
+		if (!scrollContainer || !canvasContainer) return;
+		const el = canvasContainer.querySelector<HTMLElement>(`[data-page-number="${n}"]`);
+		if (el) scrollContainer.scrollTop = el.offsetTop;
+	}
+
+	function attachPageObserver() {
+		if (!canvasContainer) return;
+		pageObserver?.disconnect();
+		pageObserver = new IntersectionObserver(
+			(entries) => {
+				let best: IntersectionObserverEntry | null = null;
+				for (const entry of entries) {
+					if (!entry.isIntersecting) continue;
+					if (!best || entry.intersectionRatio > best.intersectionRatio) best = entry;
+				}
+				if (best) {
+					const n = Number((best.target as HTMLElement).dataset.pageNumber);
+					if (n) currentPage = n;
+				}
+			},
+			{ root: scrollContainer, threshold: [0.25, 0.5, 0.75] }
+		);
+		canvasContainer
+			.querySelectorAll<HTMLElement>('[data-page-number]')
+			.forEach((el) => pageObserver!.observe(el));
+	}
+
+	async function restoreFromCache(cached: CachedPdf): Promise<boolean> {
+		if (!canvasContainer || !scrollContainer) return false;
+		pdfDoc = cached.pdfDoc;
+		pdfjsLib = cached.pdfjsLib;
+		totalPages = cached.totalPages;
+		scale = cached.scale;
+		currentPage = cached.currentPage;
+		canvasContainer.innerHTML = '';
+		canvasContainer.appendChild(cached.fragment);
+		// The fragment is empty now (children moved into the container). Drop
+		// the cache entry so a stray duplicate loadPdf() in the same lifecycle
+		// can't re-run this branch and wipe the container with empty content.
+		if (paperId) pdfCache.delete(paperId);
+		attachPageObserver();
+		// Unhide the canvas container before assigning scrollTop — while
+		// `loading` is true the container has display:none and the scroll
+		// range collapses to 0, silently clamping any scrollTop we set here.
+		loading = false;
+		await tick();
+		scrollContainer.scrollTop = cached.scrollTop;
+		return true;
+	}
+
 	async function loadPdf() {
 		loading = true;
 		error = null;
+		restored = false;
 		try {
+			// Fast path: a previous mount of this paper left its parsed doc and
+			// rendered canvases in the cache. Reattach them and skip the file
+			// read + rasterize entirely.
+			const cached = paperId ? pdfCache.get(paperId) : null;
+			if (cached && cached.path === path) {
+				const ok = await restoreFromCache(cached);
+				if (ok) return;
+			}
+
 			if (!pdfjsLib) {
 				pdfjsLib = await import('pdfjs-dist');
 				// Inline the worker for Tauri (no remote URL fetch needed).
@@ -44,10 +146,23 @@
 			pageObserver = null;
 			await fitToWidth();
 			await renderAll();
+			// Unhide the canvas before doing the scroll restore — see the same
+			// note in restoreFromCache(). Without this the scrollTop snaps to 0.
+			loading = false;
+			await tick();
+			// Restore the user's last position for this paper, if any. Set
+			// currentPage explicitly so the save effect doesn't briefly persist
+			// page=1 before the IntersectionObserver catches up after scrolling.
+			const saved = paperId ? readSavedPage(paperId) : null;
+			if (saved && saved > 1 && saved <= totalPages) {
+				currentPage = saved;
+				scrollToPageInstant(saved);
+			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : String(e);
 		} finally {
 			loading = false;
+			restored = true;
 		}
 	}
 
@@ -193,7 +308,7 @@
 	}
 
 	onMount(() => {
-		loadPdf();
+		// loadPdf is triggered by the path-watching $effect below.
 		const onKey = (e: KeyboardEvent) => {
 			if (e.key === 'Escape' && ui.pdfFullscreen) ui.pdfFullscreen = false;
 		};
@@ -207,6 +322,11 @@
 			lastLoadedPath = path;
 			loadPdf();
 		}
+	});
+
+	$effect(() => {
+		if (!restored || !paperId) return;
+		writeSavedPage(paperId, currentPage);
 	});
 
 	// Refit width when the user toggles fullscreen — the container changes
@@ -231,7 +351,25 @@
 
 	onDestroy(() => {
 		pageObserver?.disconnect();
-		pdfDoc?.destroy?.();
+		// If we own a fully-loaded PDF for a known paper, stash it for the next
+		// mount instead of destroying. Switching paper tabs will reattach the
+		// rendered canvases without a re-read or re-rasterize.
+		if (paperId && pdfDoc && canvasContainer && totalPages > 0 && restored && !error) {
+			const fragment = document.createDocumentFragment();
+			while (canvasContainer.firstChild) fragment.appendChild(canvasContainer.firstChild);
+			pdfCache.set(paperId, {
+				pdfDoc,
+				pdfjsLib,
+				fragment,
+				path,
+				scale,
+				scrollTop: scrollContainer?.scrollTop ?? 0,
+				totalPages,
+				currentPage
+			});
+		} else {
+			pdfDoc?.destroy?.();
+		}
 	});
 </script>
 

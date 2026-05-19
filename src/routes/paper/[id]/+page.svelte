@@ -259,7 +259,9 @@
 					{#if isWebpage}
 						<SourceViewer url={paper.sourceUrl!} />
 					{:else}
-						<PdfViewer path={paper.pdfPath} />
+						{#key paper.id}
+							<PdfViewer path={paper.pdfPath} paperId={paper.id} />
+						{/key}
 					{/if}
 				</div>
 				<div class="absolute inset-0 bg-background" class:hidden={mainView !== 'summary'}>
