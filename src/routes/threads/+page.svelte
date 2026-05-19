@@ -4,6 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { Plus, LayoutGrid, Rows3 } from 'lucide-svelte';
 	import type { Thread, ThreadStatus } from '$lib/types';
+	import { cn } from '$lib/utils/cn';
 
 	const cols: { status: ThreadStatus; label: string }[] = [
 		{ status: 'active', label: 'Active' },
@@ -58,6 +59,51 @@
 		const newTab = !!(e && (e.metaKey || e.ctrlKey));
 		ui.openThread(t.id, { replace: !newTab });
 		goto(`/threads/${t.id}`);
+	}
+
+	const THREAD_DRAG_MIME = 'application/x-reos-thread-id';
+	let draggingThreadId = $state<string | null>(null);
+	let dropTargetThreadId = $state<string | null>(null);
+
+	function onThreadDragStart(e: DragEvent, threadId: string) {
+		if (!e.dataTransfer) return;
+		e.dataTransfer.setData(THREAD_DRAG_MIME, threadId);
+		e.dataTransfer.setData('text/plain', threadId);
+		e.dataTransfer.effectAllowed = 'move';
+		draggingThreadId = threadId;
+	}
+
+	function onThreadDragEnd() {
+		draggingThreadId = null;
+		dropTargetThreadId = null;
+	}
+
+	function onThreadDragOver(e: DragEvent, targetId: string) {
+		if (!e.dataTransfer?.types.includes(THREAD_DRAG_MIME)) return;
+		// Don't highlight self as a drop target — would be a no-op.
+		if (draggingThreadId === targetId) return;
+		e.preventDefault();
+		e.dataTransfer.dropEffect = 'move';
+		if (dropTargetThreadId !== targetId) dropTargetThreadId = targetId;
+	}
+
+	function onThreadDragLeave(e: DragEvent, targetId: string) {
+		const related = e.relatedTarget as Node | null;
+		if (related && (e.currentTarget as HTMLElement).contains(related)) return;
+		if (dropTargetThreadId === targetId) dropTargetThreadId = null;
+	}
+
+	async function onThreadDrop(e: DragEvent, targetId: string) {
+		const draggedId = e.dataTransfer?.getData(THREAD_DRAG_MIME);
+		dropTargetThreadId = null;
+		draggingThreadId = null;
+		if (!draggedId || draggedId === targetId) return;
+		e.preventDefault();
+		try {
+			await threads.update(draggedId, { parentId: targetId });
+		} catch (err) {
+			alert(err instanceof Error ? err.message : String(err));
+		}
 	}
 </script>
 
@@ -116,8 +162,22 @@
 		<div class="grid gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
 			{#each filteredSorted as t (t.id)}
 				{@const childCount = threadChildren(t.id).length}
+				{@const isDropTarget = dropTargetThreadId === t.id}
+				{@const isDragging = draggingThreadId === t.id}
 				<button
-					class="rounded-md border border-border/60 bg-card p-2 text-left transition-colors hover:border-border hover:bg-card/80"
+					class={cn(
+						'cursor-grab rounded-md border bg-card p-2 text-left transition-colors active:cursor-grabbing',
+						isDropTarget
+							? 'border-accent bg-accent/10 ring-2 ring-accent/50'
+							: 'border-border/60 hover:border-border hover:bg-card/80',
+						isDragging && 'opacity-50'
+					)}
+					draggable="true"
+					ondragstart={(e) => onThreadDragStart(e, t.id)}
+					ondragend={onThreadDragEnd}
+					ondragover={(e) => onThreadDragOver(e, t.id)}
+					ondragleave={(e) => onThreadDragLeave(e, t.id)}
+					ondrop={(e) => onThreadDrop(e, t.id)}
 					onclick={(e) => open(t, e)}
 				>
 					<div class="flex items-center gap-2">
@@ -144,8 +204,26 @@
 					<div class="space-y-2">
 						{#each byStatus(col.status) as t (t.id)}
 							{@const childCount = threadChildren(t.id).length}
-							<Card class="cursor-pointer p-3 transition-colors hover:border-border hover:bg-card/80">
-								<button class="w-full text-left" onclick={(e) => open(t, e)}>
+							{@const isDropTarget = dropTargetThreadId === t.id}
+							{@const isDragging = draggingThreadId === t.id}
+							<div
+								class={cn(
+									'cursor-grab rounded-md border bg-card transition-colors active:cursor-grabbing',
+									isDropTarget
+										? 'border-accent bg-accent/10 ring-2 ring-accent/50'
+										: 'border-border/60 hover:border-border hover:bg-card/80',
+									isDragging && 'opacity-50'
+								)}
+								role="button"
+								tabindex="-1"
+								draggable="true"
+								ondragstart={(e) => onThreadDragStart(e, t.id)}
+								ondragend={onThreadDragEnd}
+								ondragover={(e) => onThreadDragOver(e, t.id)}
+								ondragleave={(e) => onThreadDragLeave(e, t.id)}
+								ondrop={(e) => onThreadDrop(e, t.id)}
+							>
+								<button class="w-full p-3 text-left" onclick={(e) => open(t, e)}>
 									<div class="line-clamp-2 text-sm font-medium">{t.title}</div>
 									{#if t.question}
 										<div class="mt-1 line-clamp-2 text-xs text-muted-foreground">{t.question}</div>
@@ -154,7 +232,7 @@
 										{t.papers.length} papers{#if childCount > 0} · {childCount} sub-thread{childCount === 1 ? '' : 's'}{/if}
 									</div>
 								</button>
-							</Card>
+							</div>
 						{/each}
 					</div>
 				</div>
