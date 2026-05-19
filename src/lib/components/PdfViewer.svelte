@@ -11,6 +11,8 @@
 	let canvasContainer = $state<HTMLDivElement | undefined>();
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let pdfDoc: any = null;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let pdfjsLib: any = null;
 	let totalPages = $state(0);
 	let currentPage = $state(1);
 	let scale = $state(1.2);
@@ -24,13 +26,15 @@
 		loading = true;
 		error = null;
 		try {
-			const pdfjs = await import('pdfjs-dist');
-			// Inline the worker for Tauri (no remote URL fetch needed).
-			const workerSrc = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
-			pdfjs.GlobalWorkerOptions.workerSrc = workerSrc.default;
+			if (!pdfjsLib) {
+				pdfjsLib = await import('pdfjs-dist');
+				// Inline the worker for Tauri (no remote URL fetch needed).
+				const workerSrc = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
+				pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc.default;
+			}
 
 			const bytes = await readFile(path);
-			pdfDoc = await pdfjs.getDocument({ data: bytes }).promise;
+			pdfDoc = await pdfjsLib.getDocument({ data: bytes }).promise;
 			totalPages = pdfDoc.numPages;
 			currentPage = 1;
 			// New document — drop any stale wrappers from a previous PDF so the
@@ -104,16 +108,22 @@
 
 			let wrapper: HTMLDivElement;
 			let canvas: HTMLCanvasElement;
+			let textLayerDiv: HTMLDivElement;
 			if (inPlace) {
 				wrapper = existing[i - 1];
 				canvas = wrapper.querySelector('canvas')!;
+				textLayerDiv = wrapper.querySelector<HTMLDivElement>('.textLayer')!;
+				textLayerDiv.replaceChildren();
 			} else {
 				wrapper = document.createElement('div');
 				wrapper.dataset.pageNumber = String(i);
-				wrapper.className = 'mx-auto';
+				wrapper.className = 'relative mx-auto';
 				canvas = document.createElement('canvas');
-				canvas.className = 'rounded shadow-lg';
+				canvas.className = 'block rounded shadow-lg';
 				wrapper.appendChild(canvas);
+				textLayerDiv = document.createElement('div');
+				textLayerDiv.className = 'textLayer';
+				wrapper.appendChild(textLayerDiv);
 				canvasContainer.appendChild(wrapper);
 				pageObserver!.observe(wrapper);
 			}
@@ -137,6 +147,20 @@
 					outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined;
 				await page.render({ canvasContext: ctx, viewport, transform }).promise;
 			}
+
+			// Selectable text overlay. PDF.js positions transparent spans on top
+			// of the canvas so text selection / copy-paste works against the
+			// rasterized page.
+			textLayerDiv.style.width = `${cssWidth}px`;
+			textLayerDiv.style.height = `${cssHeight}px`;
+			const textContent = await page.getTextContent();
+			if (token !== renderToken) return;
+			const textLayer = new pdfjsLib.TextLayer({
+				textContentSource: textContent,
+				container: textLayerDiv,
+				viewport
+			});
+			await textLayer.render();
 
 			// Keep the anchor pinned: any size change above it shifts its
 			// offsetTop, so add the delta to scrollTop to compensate.
@@ -265,3 +289,33 @@
 		<div bind:this={canvasContainer} class="space-y-4" class:hidden={loading || !!error}></div>
 	</div>
 </div>
+
+<style>
+	/* PDF.js text layer: invisible spans positioned over the canvas so the user
+	   can select and copy text from the rendered page. */
+	:global(.textLayer) {
+		position: absolute;
+		inset: 0;
+		overflow: clip;
+		line-height: 1;
+		opacity: 1;
+		text-align: initial;
+		text-size-adjust: none;
+		forced-color-adjust: none;
+		transform-origin: 0 0;
+		caret-color: CanvasText;
+		z-index: 2;
+	}
+
+	:global(.textLayer :is(span, br)) {
+		color: transparent;
+		position: absolute;
+		white-space: pre;
+		cursor: text;
+		transform-origin: 0% 0%;
+	}
+
+	:global(.textLayer ::selection) {
+		background: rgba(0, 100, 250, 0.3);
+	}
+</style>
