@@ -367,6 +367,7 @@ export const ui = (() => {
 	}
 
 	let threadsCompact = $state(readLocal('reos:threadsCompact', false));
+	let lastPath = $state<string>(readLocal<string>('reos:lastPath', '/'));
 
 	function persistTabs() {
 		writeLocal('reos:tabOrder', tabOrder);
@@ -469,6 +470,13 @@ export const ui = (() => {
 		set threadsCompact(v) {
 			threadsCompact = v;
 			writeLocal('reos:threadsCompact', v);
+		},
+		get lastPath() {
+			return lastPath;
+		},
+		set lastPath(v: string) {
+			lastPath = v;
+			writeLocal('reos:lastPath', v);
 		},
 		openPaper(id: string, opts?: { replace?: boolean }) {
 			const existing = tabOrder.some((t) => t.kind === 'paper' && t.id === id);

@@ -14,6 +14,17 @@
 						document.documentElement.classList.toggle('dark', t === 'dracula' || t === 'dark');
 					}
 				} catch (e) {}
+				try {
+					if (window.location.pathname === '/' && !window.location.search && !window.location.hash) {
+						var raw = localStorage.getItem('reos:lastPath');
+						if (raw) {
+							var saved = JSON.parse(raw);
+							if (typeof saved === 'string' && saved.charAt(0) === '/' && saved !== '/') {
+								window.location.replace(saved);
+							}
+						}
+					}
+				} catch (e) {}
 			})();
 		</script>
 		%sveltekit.head%

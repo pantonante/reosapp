@@ -35,6 +35,7 @@
 		if (paperMatch) ui.activeTab = { kind: 'paper', id: paperMatch[1] };
 		else if (threadMatch) ui.activeTab = { kind: 'thread', id: threadMatch[1] };
 		else ui.activeTab = null;
+		if (!booting) ui.lastPath = path;
 	});
 </script>
 
