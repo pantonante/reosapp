@@ -14,6 +14,7 @@
 	} from 'lucide-svelte';
 	import type { ReadingStatus, ThreadStatus } from '$lib/types';
 	import PaperCard from '$lib/components/PaperCard.svelte';
+	import { cn } from '$lib/utils/cn';
 
 	const id = $derived(page.params.id!);
 	const thread = $derived(threads.get(id));
@@ -24,6 +25,22 @@
 
 	let search = $state('');
 	let sortBy = $state<'order' | 'added' | 'published' | 'title' | 'rating'>('order');
+	let viewMode = $state<'library' | 'status'>('library');
+
+	$effect(() => {
+		if (typeof localStorage === 'undefined') return;
+		const stored = localStorage.getItem('reos:threadViewMode');
+		if (stored === 'library' || stored === 'status') {
+			untrack(() => (viewMode = stored));
+		}
+	});
+
+	function setViewMode(mode: 'library' | 'status') {
+		viewMode = mode;
+		if (typeof localStorage !== 'undefined') {
+			localStorage.setItem('reos:threadViewMode', mode);
+		}
+	}
 
 	const threadPapers = $derived.by(() =>
 		(thread?.papers ?? []).map((tp) => papers.get(tp.paperId)).filter(Boolean)
@@ -191,8 +208,34 @@
 				placeholder="Filter title, authors, arxiv ID…"
 				class="max-w-xs"
 			/>
+			<div class="flex items-center rounded-md border border-input bg-background p-0.5 sm:ml-auto">
+				<button
+					type="button"
+					class={cn(
+						'h-7 rounded px-3 text-xs font-medium transition-colors',
+						viewMode === 'library'
+							? 'bg-secondary text-foreground'
+							: 'text-muted-foreground hover:text-foreground'
+					)}
+					onclick={() => setViewMode('library')}
+				>
+					Library
+				</button>
+				<button
+					type="button"
+					class={cn(
+						'h-7 rounded px-3 text-xs font-medium transition-colors',
+						viewMode === 'status'
+							? 'bg-secondary text-foreground'
+							: 'text-muted-foreground hover:text-foreground'
+					)}
+					onclick={() => setViewMode('status')}
+				>
+					Status
+				</button>
+			</div>
 			<select
-				class="h-9 rounded-md border border-input bg-background px-3 text-sm sm:ml-auto"
+				class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 				bind:value={sortBy}
 			>
 				<option value="order">Thread order</option>
@@ -203,34 +246,53 @@
 			</select>
 		</div>
 
-		<div class="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-			{#each cols as col (col.status)}
-				<div>
-					<h3 class="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-						{col.label}
-						<span class="ml-2 font-mono text-[10px] text-muted-foreground/80">
-							{papersByStatus(col.status).length}
-						</span>
-					</h3>
-					<div class="space-y-2">
-						{#each papersByStatus(col.status) as p (p?.id)}
-							{#if p}
-								<div class="group relative">
-									<PaperCard paper={p} compact onclick={(e) => openPaper(p.id, e)} />
-									<button
-										class="absolute right-2 top-2 rounded p-1 opacity-0 transition-opacity hover:bg-destructive/15 hover:text-destructive group-hover:opacity-100"
-										onclick={() => removePaper(p.id)}
-										aria-label="Remove from thread"
-									>
-										<Trash2 class="h-3 w-3" />
-									</button>
-								</div>
-							{/if}
-						{/each}
+		{#if viewMode === 'library'}
+			<div class="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+				{#each filteredPapers as p (p?.id)}
+					{#if p}
+						<div class="group relative">
+							<PaperCard paper={p} compact onclick={(e) => openPaper(p.id, e)} />
+							<button
+								class="absolute right-2 top-2 rounded p-1 opacity-0 transition-opacity hover:bg-destructive/15 hover:text-destructive group-hover:opacity-100"
+								onclick={() => removePaper(p.id)}
+								aria-label="Remove from thread"
+							>
+								<Trash2 class="h-3 w-3" />
+							</button>
+						</div>
+					{/if}
+				{/each}
+			</div>
+		{:else}
+			<div class="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+				{#each cols as col (col.status)}
+					<div>
+						<h3 class="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+							{col.label}
+							<span class="ml-2 font-mono text-[10px] text-muted-foreground/80">
+								{papersByStatus(col.status).length}
+							</span>
+						</h3>
+						<div class="space-y-2">
+							{#each papersByStatus(col.status) as p (p?.id)}
+								{#if p}
+									<div class="group relative">
+										<PaperCard paper={p} compact onclick={(e) => openPaper(p.id, e)} />
+										<button
+											class="absolute right-2 top-2 rounded p-1 opacity-0 transition-opacity hover:bg-destructive/15 hover:text-destructive group-hover:opacity-100"
+											onclick={() => removePaper(p.id)}
+											aria-label="Remove from thread"
+										>
+											<Trash2 class="h-3 w-3" />
+										</button>
+									</div>
+								{/if}
+							{/each}
+						</div>
 					</div>
-				</div>
-			{/each}
-		</div>
+				{/each}
+			</div>
+		{/if}
 
 	</div>
 {/if}
