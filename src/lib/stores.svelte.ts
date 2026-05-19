@@ -114,6 +114,21 @@ function createThreadsStore() {
 	let items = $state<Thread[]>([]);
 	let loaded = $state(false);
 
+	function descendantIds(rootId: string): string[] {
+		const out: string[] = [];
+		const stack = [rootId];
+		while (stack.length) {
+			const id = stack.pop()!;
+			for (const t of items) {
+				if (t.parentId === id) {
+					out.push(t.id);
+					stack.push(t.id);
+				}
+			}
+		}
+		return out;
+	}
+
 	return {
 		get items() {
 			return items.filter((t) => t.id !== INBOX_THREAD_ID);
@@ -144,30 +159,80 @@ function createThreadsStore() {
 		async update(id: string, patch: Partial<Thread>) {
 			const current = items.find((i) => i.id === id);
 			if (!current) return;
+			if ('parentId' in patch) {
+				const newParent = patch.parentId ?? null;
+				if (id === INBOX_THREAD_ID && newParent !== null) {
+					throw new Error('Inbox cannot be a sub-thread');
+				}
+				if (newParent === id) {
+					throw new Error('A thread cannot be its own parent');
+				}
+				if (newParent) {
+					// Walk ancestors of the proposed parent. If we hit this thread,
+					// it would create a cycle.
+					let cursor: string | null | undefined = newParent;
+					const visited = new Set<string>();
+					while (cursor) {
+						if (cursor === id) {
+							throw new Error('Cannot move a thread under one of its descendants');
+						}
+						if (visited.has(cursor)) break; // safety: existing data is well-formed
+						visited.add(cursor);
+						const node = items.find((t) => t.id === cursor);
+						cursor = node?.parentId ?? null;
+					}
+				}
+			}
 			const next = { ...current, ...patch, updatedAt: new Date().toISOString() };
 			items = items.map((i) => (i.id === id ? next : i));
 			await writeThreadMeta(id, next);
 			await db.updateThread(id, next);
 		},
 		async remove(id: string) {
-			const thread = items.find((i) => i.id === id);
-			// Move every paper out to inbox first; otherwise removeThreadFolder
-			// would also delete the papers' PDFs/notes/chat that live inside.
-			if (thread) {
-				const paperIds = thread.papers.map((tp) => tp.paperId);
-				for (const pid of paperIds) {
-					await papers.move(pid, INBOX_SLUG);
+			// Cascade: delete deepest descendants first so each removeThreadFolder
+			// sees an empty subtree on disk.
+			const subtree = [...descendantIds(id), id];
+			for (const tid of subtree) {
+				const t = items.find((i) => i.id === tid);
+				if (t) {
+					const paperIds = t.papers.map((tp) => tp.paperId);
+					for (const pid of paperIds) {
+						await papers.move(pid, INBOX_SLUG);
+					}
 				}
+				ui.closeThread(tid);
+				items = items.filter((i) => i.id !== tid);
+				await removeThreadFolder(tid);
+				await db.removeThread(tid);
 			}
-			items = items.filter((i) => i.id !== id);
-			await removeThreadFolder(id);
-			await db.removeThread(id);
-		}
+		},
+		descendantIds
 	};
 }
 
 export const papers = createPapersStore();
 export const threads = createThreadsStore();
+
+/** Direct children of a thread (or roots when parentId is null). Excludes inbox. */
+export function threadChildren(parentId: string | null): Thread[] {
+	return threads.items.filter((t) => (t.parentId ?? null) === parentId);
+}
+
+/** Ancestors of a thread, ordered root → ... → immediate parent. Empty for roots. */
+export function threadAncestors(id: string): Thread[] {
+	const chain: Thread[] = [];
+	let cursor: string | null | undefined = threads.get(id)?.parentId ?? null;
+	const visited = new Set<string>();
+	while (cursor) {
+		if (visited.has(cursor)) break;
+		visited.add(cursor);
+		const t = threads.get(cursor);
+		if (!t) break;
+		chain.unshift(t);
+		cursor = t.parentId ?? null;
+	}
+	return chain;
+}
 
 // --- Summary metadata store ---
 
@@ -270,6 +335,7 @@ export const ui = (() => {
 	let quickOpenOpen = $state(false);
 	let addPaperOpen = $state(false);
 	let newThreadOpen = $state(false);
+	let newThreadParentId = $state<string | null>(null);
 	let bulkSummaryOpen = $state(false);
 	let addPaperTargetThreadId = $state<string | null>(null);
 	let sidebarCollapsed = $state(readLocal('reos:sidebarCollapsed', false));
@@ -331,6 +397,13 @@ export const ui = (() => {
 		},
 		set newThreadOpen(v) {
 			newThreadOpen = v;
+			if (!v) newThreadParentId = null;
+		},
+		get newThreadParentId() {
+			return newThreadParentId;
+		},
+		set newThreadParentId(v) {
+			newThreadParentId = v;
 		},
 		get addPaperOpen() {
 			return addPaperOpen;

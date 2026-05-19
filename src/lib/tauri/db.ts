@@ -4,7 +4,7 @@ import type { Paper, SummaryMeta, Thread, ThreadPaper } from '$lib/types';
 let _db: Database | null = null;
 let _ready: Promise<Database> | null = null;
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS papers (
@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS threads (
 	question TEXT NOT NULL DEFAULT '',
 	status TEXT NOT NULL DEFAULT 'active',
 	createdAt TEXT NOT NULL,
-	updatedAt TEXT NOT NULL
+	updatedAt TEXT NOT NULL,
+	parentId TEXT REFERENCES threads(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS thread_papers (
@@ -81,6 +82,18 @@ export async function getDb(): Promise<Database> {
 			await db.execute(`ALTER TABLE papers ADD COLUMN sourceUrl TEXT NOT NULL DEFAULT ''`);
 		} catch {
 			// already migrated
+		}
+		try {
+			await db.execute(
+				`ALTER TABLE threads ADD COLUMN parentId TEXT REFERENCES threads(id) ON DELETE CASCADE`
+			);
+		} catch {
+			// already migrated
+		}
+		try {
+			await db.execute(`CREATE INDEX IF NOT EXISTS idx_threads_parent ON threads(parentId)`);
+		} catch {
+			// no-op
 		}
 		await db.execute('INSERT OR REPLACE INTO _meta(key, value) VALUES(?, ?)', [
 			'schemaVersion',
@@ -133,7 +146,8 @@ function rowToThread(row: Record<string, unknown>, papers: ThreadPaper[]): Threa
 		status: (row.status as Thread['status']) ?? 'active',
 		papers,
 		createdAt: (row.createdAt as string) ?? new Date().toISOString(),
-		updatedAt: (row.updatedAt as string) ?? new Date().toISOString()
+		updatedAt: (row.updatedAt as string) ?? new Date().toISOString(),
+		parentId: (row.parentId as string) ?? null
 	};
 }
 
@@ -254,14 +268,15 @@ export const db = {
 	async addThread(t: Thread): Promise<void> {
 		const conn = await getDb();
 		await conn.execute(
-			`INSERT INTO threads(id, title, question, status, createdAt, updatedAt)
-			VALUES(?, ?, ?, ?, ?, ?)
+			`INSERT INTO threads(id, title, question, status, createdAt, updatedAt, parentId)
+			VALUES(?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				title = excluded.title,
 				question = excluded.question,
 				status = excluded.status,
-				updatedAt = excluded.updatedAt`,
-			[t.id, t.title, t.question, t.status, t.createdAt, t.updatedAt]
+				updatedAt = excluded.updatedAt,
+				parentId = excluded.parentId`,
+			[t.id, t.title, t.question, t.status, t.createdAt, t.updatedAt, t.parentId ?? null]
 		);
 		await conn.execute('DELETE FROM thread_papers WHERE threadId = ?', [t.id]);
 		for (const p of t.papers) {

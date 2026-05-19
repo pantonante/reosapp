@@ -40,6 +40,8 @@ export interface Thread {
 	papers: ThreadPaper[];
 	createdAt: string;
 	updatedAt: string;
+	/** Parent thread id; null/undefined for root threads. Inbox is always root. */
+	parentId?: string | null;
 }
 
 export interface Note {

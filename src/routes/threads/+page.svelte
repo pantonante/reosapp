@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { papers, threads, ui } from '$lib/stores.svelte';
+	import { papers, threads, threadChildren, ui } from '$lib/stores.svelte';
 	import { Button, Card, Input } from '$lib/components/ui';
 	import { goto } from '$app/navigation';
 	import { Plus, LayoutGrid, Rows3 } from 'lucide-svelte';
@@ -14,7 +14,9 @@
 	let search = $state('');
 	let sortBy = $state<'created' | 'lastPaper' | 'name' | 'papers'>('created');
 
-	const nonArchived = $derived(threads.items.filter((t) => t.status !== 'archived'));
+	const nonArchived = $derived(
+		threads.items.filter((t) => t.status !== 'archived' && !t.parentId)
+	);
 
 	function lastPaperAddedAt(t: Thread): number {
 		let max = 0;
@@ -113,6 +115,7 @@
 	{#if ui.threadsCompact}
 		<div class="grid gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
 			{#each filteredSorted as t (t.id)}
+				{@const childCount = threadChildren(t.id).length}
 				<button
 					class="rounded-md border border-border/60 bg-card p-2 text-left transition-colors hover:border-border hover:bg-card/80"
 					onclick={(e) => open(t, e)}
@@ -121,7 +124,9 @@
 						<span class="h-1.5 w-1.5 rounded-full {t.status === 'active' ? 'bg-accent' : t.status === 'paused' ? 'bg-yellow-500' : 'bg-muted-foreground/60'}"></span>
 						<span class="line-clamp-1 text-xs font-medium">{t.title}</span>
 					</div>
-					<div class="mt-1 text-[10px] text-muted-foreground">{t.papers.length} papers</div>
+					<div class="mt-1 text-[10px] text-muted-foreground">
+						{t.papers.length} papers{#if childCount > 0} · {childCount} sub-thread{childCount === 1 ? '' : 's'}{/if}
+					</div>
 				</button>
 			{/each}
 		</div>
@@ -138,13 +143,16 @@
 					</h3>
 					<div class="space-y-2">
 						{#each byStatus(col.status) as t (t.id)}
+							{@const childCount = threadChildren(t.id).length}
 							<Card class="cursor-pointer p-3 transition-colors hover:border-border hover:bg-card/80">
 								<button class="w-full text-left" onclick={(e) => open(t, e)}>
 									<div class="line-clamp-2 text-sm font-medium">{t.title}</div>
 									{#if t.question}
 										<div class="mt-1 line-clamp-2 text-xs text-muted-foreground">{t.question}</div>
 									{/if}
-									<div class="mt-2 text-[10px] text-muted-foreground">{t.papers.length} papers</div>
+									<div class="mt-2 text-[10px] text-muted-foreground">
+										{t.papers.length} papers{#if childCount > 0} · {childCount} sub-thread{childCount === 1 ? '' : 's'}{/if}
+									</div>
 								</button>
 							</Card>
 						{/each}

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { papers, threads } from '$lib/stores.svelte';
+	import { papers, threads, threadAncestors } from '$lib/stores.svelte';
 	import { ChevronRight } from 'lucide-svelte';
 
 	type Crumb = { label: string; href?: string };
@@ -19,6 +19,11 @@
 			if (segs.length === 1) return [{ label: 'threads' }];
 			const t = threads.get(segs[1]);
 			const title = t?.title ?? segs[1];
+			if (t) {
+				for (const a of threadAncestors(t.id)) {
+					out.push({ label: a.title, href: `/threads/${a.id}` });
+				}
+			}
 			if (segs.length === 2) {
 				out.push({ label: title });
 				return out;
@@ -39,11 +44,15 @@
 				];
 			if (p.threadId && p.threadId !== 'inbox') {
 				const t = threads.get(p.threadId);
-				return [
-					{ label: 'threads', href: '/threads' },
-					{ label: t?.title ?? p.threadId, href: `/threads/${p.threadId}` },
-					{ label: title }
-				];
+				const out: Crumb[] = [{ label: 'threads', href: '/threads' }];
+				if (t) {
+					for (const a of threadAncestors(t.id)) {
+						out.push({ label: a.title, href: `/threads/${a.id}` });
+					}
+				}
+				out.push({ label: t?.title ?? p.threadId, href: `/threads/${p.threadId}` });
+				out.push({ label: title });
+				return out;
 			}
 			if (p.threadId === 'inbox') {
 				return [

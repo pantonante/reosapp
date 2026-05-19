@@ -47,7 +47,8 @@ export async function ensureRootLayout(): Promise<void> {
 					question: '',
 					status: 'active',
 					createdAt: new Date().toISOString(),
-					updatedAt: new Date().toISOString()
+					updatedAt: new Date().toISOString(),
+					parentId: null
 				},
 				null,
 				2
@@ -106,7 +107,8 @@ export async function writeThreadMeta(slug: string, t: Thread): Promise<void> {
 		question: t.question,
 		status: t.status,
 		createdAt: t.createdAt,
-		updatedAt: t.updatedAt
+		updatedAt: t.updatedAt,
+		parentId: t.parentId ?? null
 	};
 	await writeTextFile(await join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
 }

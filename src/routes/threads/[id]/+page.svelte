@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
-	import { papers, threads, ui } from '$lib/stores.svelte';
-	import { Button, Input } from '$lib/components/ui';
+	import { papers, threads, threadChildren, threadAncestors, ui } from '$lib/stores.svelte';
+	import { Button, Dialog, Input } from '$lib/components/ui';
 	import { goto } from '$app/navigation';
 	import {
 		Plus,
@@ -10,14 +10,28 @@
 		Archive,
 		ArchiveRestore,
 		MessageSquare,
-		ChevronDown
+		ChevronDown,
+		ChevronRight,
+		FolderTree
 	} from 'lucide-svelte';
-	import type { ReadingStatus, ThreadStatus } from '$lib/types';
+	import type { ReadingStatus, Thread, ThreadStatus } from '$lib/types';
 	import PaperCard from '$lib/components/PaperCard.svelte';
 	import { cn } from '$lib/utils/cn';
 
 	const id = $derived(page.params.id!);
 	const thread = $derived(threads.get(id));
+
+	const ancestors = $derived(thread ? threadAncestors(thread.id) : []);
+	const subThreads = $derived(thread ? threadChildren(thread.id) : []);
+
+	let movePickerOpen = $state(false);
+
+	// Valid parent options: any thread that isn't self or a descendant. Inbox excluded.
+	const parentOptions = $derived.by<Thread[]>(() => {
+		if (!thread) return [];
+		const excluded = new Set<string>([thread.id, ...threads.descendantIds(thread.id)]);
+		return threads.items.filter((t) => !excluded.has(t.id));
+	});
 
 	$effect(() => {
 		if (id) untrack(() => ui.openThread(id));
@@ -101,7 +115,11 @@
 
 	async function deleteThread() {
 		if (!thread) return;
-		if (!confirm(`Delete thread "${thread.title}"? Papers stay in your library.`)) return;
+		const subCount = subThreads.length;
+		const msg = subCount
+			? `Delete thread "${thread.title}" and ${subCount} sub-thread${subCount === 1 ? '' : 's'}? Papers move to inbox.`
+			: `Delete thread "${thread.title}"? Papers stay in your library.`;
+		if (!confirm(msg)) return;
 		const tid = thread.id;
 		ui.closeThread(tid);
 		await threads.remove(tid);
@@ -112,6 +130,84 @@
 		const newTab = !!(e && (e.metaKey || e.ctrlKey));
 		ui.openPaper(pid, { replace: !newTab });
 		goto(`/paper/${pid}`);
+	}
+
+	function openNewSubThread() {
+		if (!thread) return;
+		ui.newThreadParentId = thread.id;
+		ui.newThreadOpen = true;
+	}
+
+	function openThread(tid: string, e?: MouseEvent) {
+		const newTab = !!(e && (e.metaKey || e.ctrlKey));
+		ui.openThread(tid, { replace: !newTab });
+		goto(`/threads/${tid}`);
+	}
+
+	async function setParent(newParent: string | null) {
+		if (!thread) return;
+		try {
+			await threads.update(thread.id, { parentId: newParent });
+			movePickerOpen = false;
+		} catch (err) {
+			alert(err instanceof Error ? err.message : String(err));
+		}
+	}
+
+	const PAPER_DRAG_MIME = 'application/x-reos-paper-id';
+	let dropTargetThreadId = $state<string | null>(null);
+	let dropTargetStatus = $state<ReadingStatus | null>(null);
+
+	function onPaperDragStart(e: DragEvent, paperId: string) {
+		if (!e.dataTransfer) return;
+		e.dataTransfer.setData(PAPER_DRAG_MIME, paperId);
+		e.dataTransfer.setData('text/plain', paperId);
+		e.dataTransfer.effectAllowed = 'move';
+	}
+
+	function onSubThreadDragOver(e: DragEvent, subThreadId: string) {
+		if (!e.dataTransfer?.types.includes(PAPER_DRAG_MIME)) return;
+		e.preventDefault();
+		e.dataTransfer.dropEffect = 'move';
+		if (dropTargetThreadId !== subThreadId) dropTargetThreadId = subThreadId;
+	}
+
+	function onSubThreadDragLeave(e: DragEvent, subThreadId: string) {
+		// Ignore enter/leave bubbling from children inside the card.
+		const related = e.relatedTarget as Node | null;
+		if (related && (e.currentTarget as HTMLElement).contains(related)) return;
+		if (dropTargetThreadId === subThreadId) dropTargetThreadId = null;
+	}
+
+	async function onSubThreadDrop(e: DragEvent, subThreadId: string) {
+		const paperId = e.dataTransfer?.getData(PAPER_DRAG_MIME);
+		dropTargetThreadId = null;
+		if (!paperId) return;
+		e.preventDefault();
+		await papers.move(paperId, subThreadId);
+	}
+
+	function onStatusDragOver(e: DragEvent, status: ReadingStatus) {
+		if (!e.dataTransfer?.types.includes(PAPER_DRAG_MIME)) return;
+		e.preventDefault();
+		e.dataTransfer.dropEffect = 'move';
+		if (dropTargetStatus !== status) dropTargetStatus = status;
+	}
+
+	function onStatusDragLeave(e: DragEvent, status: ReadingStatus) {
+		const related = e.relatedTarget as Node | null;
+		if (related && (e.currentTarget as HTMLElement).contains(related)) return;
+		if (dropTargetStatus === status) dropTargetStatus = null;
+	}
+
+	async function onStatusDrop(e: DragEvent, status: ReadingStatus) {
+		const paperId = e.dataTransfer?.getData(PAPER_DRAG_MIME);
+		dropTargetStatus = null;
+		if (!paperId) return;
+		e.preventDefault();
+		const current = papers.get(paperId);
+		if (!current || current.readingStatus === status) return;
+		await papers.update(paperId, { readingStatus: status });
 	}
 </script>
 
@@ -164,6 +260,16 @@
 						/>
 					</label>
 					<div class="ml-1 flex items-center rounded-[10px] border border-border/60 bg-secondary/30 p-0.5 shadow-[inset_0_1px_0_0_hsl(var(--panel-highlight)/0.3)]">
+						<Button
+							variant="ghost"
+							size="icon"
+							class="h-8 w-8 rounded-[8px]"
+							onclick={() => (movePickerOpen = true)}
+							aria-label="Move thread"
+							title="Move thread"
+						>
+							<FolderTree class="h-4 w-4" />
+						</Button>
 						{#if thread.status === 'archived'}
 							<Button
 								variant="ghost"
@@ -201,6 +307,64 @@
 				</div>
 			</div>
 		</header>
+
+		{#if ancestors.length > 0}
+			<nav class="!mt-2 flex flex-wrap items-center gap-1 text-xs text-muted-foreground" aria-label="Thread ancestors">
+				{#each ancestors as a (a.id)}
+					<button
+						type="button"
+						class="rounded px-1.5 py-0.5 transition-colors hover:bg-secondary/40 hover:text-foreground"
+						onclick={(e) => openThread(a.id, e)}
+					>
+						{a.title}
+					</button>
+					<ChevronRight class="h-3 w-3 text-muted-foreground/60" />
+				{/each}
+				<span class="px-1.5 py-0.5 text-foreground">{thread.title}</span>
+			</nav>
+		{/if}
+
+		<section class="!mt-2 space-y-2">
+				<h3 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+					Sub-threads
+					{#if subThreads.length > 0}
+						<span class="ml-2 font-mono text-[10px] text-muted-foreground/80">{subThreads.length}</span>
+					{/if}
+				</h3>
+				<div class="flex flex-wrap gap-2">
+					{#each subThreads as st (st.id)}
+						{@const stChildren = threadChildren(st.id).length}
+						{@const isDropTarget = dropTargetThreadId === st.id}
+						<button
+							class={cn(
+								'rounded-md border bg-card px-2.5 py-1.5 text-left transition-colors',
+								isDropTarget
+									? 'border-accent bg-accent/10 ring-2 ring-accent/50'
+									: 'border-border/60 hover:border-border hover:bg-card/80'
+							)}
+							onclick={(e) => openThread(st.id, e)}
+							ondragover={(e) => onSubThreadDragOver(e, st.id)}
+							ondragleave={(e) => onSubThreadDragLeave(e, st.id)}
+							ondrop={(e) => onSubThreadDrop(e, st.id)}
+						>
+							<div class="flex items-center gap-2">
+								<span class="h-1.5 w-1.5 rounded-full {st.status === 'active' ? 'bg-accent' : st.status === 'paused' ? 'bg-yellow-500' : 'bg-muted-foreground/60'}"></span>
+								<span class="line-clamp-1 text-xs font-medium">{st.title}</span>
+							</div>
+							<div class="mt-0.5 text-[10px] text-muted-foreground">
+								{st.papers.length} papers{#if stChildren > 0} · {stChildren} sub{/if}
+							</div>
+						</button>
+					{/each}
+					<button
+						class="rounded-md border border-dashed border-border/60 bg-transparent px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-secondary/30 hover:text-foreground"
+						onclick={openNewSubThread}
+					>
+						<Plus class="inline h-3 w-3" />
+						New sub-thread
+					</button>
+				</div>
+			</section>
 
 		<div class="!mt-2 flex flex-wrap items-center gap-2">
 			<Input
@@ -250,7 +414,13 @@
 			<div class="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
 				{#each filteredPapers as p (p?.id)}
 					{#if p}
-						<div class="group relative">
+						<div
+							class="group relative cursor-grab active:cursor-grabbing"
+							draggable="true"
+							role="button"
+							tabindex="-1"
+							ondragstart={(e) => onPaperDragStart(e, p.id)}
+						>
 							<PaperCard paper={p} compact onclick={(e) => openPaper(p.id, e)} />
 							<button
 								class="absolute right-2 top-2 rounded p-1 opacity-0 transition-opacity hover:bg-destructive/15 hover:text-destructive group-hover:opacity-100"
@@ -266,17 +436,36 @@
 		{:else}
 			<div class="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
 				{#each cols as col (col.status)}
-					<div>
+					{@const isStatusDropTarget = dropTargetStatus === col.status}
+					<div
+						class={cn(
+							'rounded-md p-1 transition-colors',
+							isStatusDropTarget
+								? 'bg-accent/10 ring-2 ring-accent/50'
+								: 'ring-2 ring-transparent'
+						)}
+						role="region"
+						aria-label="{col.label} papers"
+						ondragover={(e) => onStatusDragOver(e, col.status)}
+						ondragleave={(e) => onStatusDragLeave(e, col.status)}
+						ondrop={(e) => onStatusDrop(e, col.status)}
+					>
 						<h3 class="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
 							{col.label}
 							<span class="ml-2 font-mono text-[10px] text-muted-foreground/80">
 								{papersByStatus(col.status).length}
 							</span>
 						</h3>
-						<div class="space-y-2">
+						<div class="min-h-[3rem] space-y-2">
 							{#each papersByStatus(col.status) as p (p?.id)}
 								{#if p}
-									<div class="group relative">
+									<div
+										class="group relative cursor-grab active:cursor-grabbing"
+										draggable="true"
+										role="button"
+										tabindex="-1"
+										ondragstart={(e) => onPaperDragStart(e, p.id)}
+									>
 										<PaperCard paper={p} compact onclick={(e) => openPaper(p.id, e)} />
 										<button
 											class="absolute right-2 top-2 rounded p-1 opacity-0 transition-opacity hover:bg-destructive/15 hover:text-destructive group-hover:opacity-100"
@@ -295,4 +484,53 @@
 		{/if}
 
 	</div>
+
+	<Dialog
+		bind:open={movePickerOpen}
+		title="Move thread"
+		description="Choose a parent thread, or make this a root thread."
+	>
+		<div class="space-y-2">
+			<button
+				type="button"
+				class="flex w-full items-center justify-between rounded-md border border-border/60 px-3 py-2 text-left text-sm transition-colors hover:bg-secondary/40 disabled:cursor-not-allowed disabled:opacity-50"
+				disabled={!thread.parentId}
+				onclick={() => setParent(null)}
+			>
+				<span>(None — make root thread)</span>
+				{#if !thread.parentId}
+					<span class="text-[10px] text-muted-foreground">current</span>
+				{/if}
+			</button>
+			<div class="max-h-72 space-y-1 overflow-y-auto">
+				{#each parentOptions as opt (opt.id)}
+					{@const isCurrent = thread.parentId === opt.id}
+					{@const optAncestors = threadAncestors(opt.id)}
+					<button
+						type="button"
+						class="flex w-full items-center justify-between rounded-md border border-border/60 px-3 py-2 text-left text-sm transition-colors hover:bg-secondary/40 disabled:cursor-not-allowed disabled:opacity-50"
+						disabled={isCurrent}
+						onclick={() => setParent(opt.id)}
+					>
+						<span class="min-w-0 truncate">
+							{#if optAncestors.length > 0}
+								<span class="text-muted-foreground">
+									{optAncestors.map((a) => a.title).join(' › ')} ›
+								</span>
+							{/if}
+							{opt.title}
+						</span>
+						{#if isCurrent}
+							<span class="text-[10px] text-muted-foreground">current</span>
+						{/if}
+					</button>
+				{/each}
+				{#if parentOptions.length === 0}
+					<div class="rounded-md border border-dashed border-border/60 px-3 py-4 text-center text-xs text-muted-foreground">
+						No other threads available.
+					</div>
+				{/if}
+			</div>
+		</div>
+	</Dialog>
 {/if}

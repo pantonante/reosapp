@@ -2,10 +2,13 @@
 	import { goto } from '$app/navigation';
 	import { threads, ui } from '$lib/stores.svelte';
 	import { Button, Dialog, Input, Textarea } from '$lib/components/ui';
+	import { X } from 'lucide-svelte';
 	import type { Thread } from '$lib/types';
 
 	let title = $state('');
 	let question = $state('');
+
+	const parent = $derived(ui.newThreadParentId ? threads.get(ui.newThreadParentId) : null);
 
 	function reset() {
 		title = '';
@@ -20,7 +23,8 @@
 			status: 'active',
 			papers: [],
 			createdAt: new Date().toISOString(),
-			updatedAt: new Date().toISOString()
+			updatedAt: new Date().toISOString(),
+			parentId: ui.newThreadParentId ?? null
 		};
 		await threads.add(t);
 		reset();
@@ -39,6 +43,22 @@
 	}}
 >
 	<div class="space-y-3">
+		{#if parent}
+			<div class="flex items-center justify-between rounded-md border border-border/60 bg-secondary/30 px-2.5 py-1.5 text-xs">
+				<span class="truncate text-muted-foreground">
+					Sub-thread of <span class="text-foreground">{parent.title}</span>
+				</span>
+				<button
+					type="button"
+					class="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+					onclick={() => (ui.newThreadParentId = null)}
+					aria-label="Make root thread"
+					title="Make root thread"
+				>
+					<X class="h-3 w-3" />
+				</button>
+			</div>
+		{/if}
 		<div>
 			<label for="nt-title" class="text-xs text-muted-foreground">Title</label>
 			<Input id="nt-title" bind:value={title} placeholder="Linear attention scaling" />
