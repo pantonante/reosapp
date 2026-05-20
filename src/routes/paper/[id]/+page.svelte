@@ -10,7 +10,7 @@
 	import PaperSummary from '$lib/components/PaperSummary.svelte';
 	import { revealInFinder, openExternal } from '$lib/tauri/shell';
 	import { readNotes, writeNotes } from '$lib/tauri/fs';
-	import { ExternalLink, FolderOpen, Star, FileText, Globe, Sparkles, MessageSquare, PanelRight, Inbox, Check, ArrowRightLeft, Github, Trash2 } from 'lucide-svelte';
+	import { ExternalLink, FolderOpen, Star, FileText, Globe, Sparkles, MessageSquare, PanelRight, Inbox, Check, ArrowRightLeft, Github, Trash2, RotateCw } from 'lucide-svelte';
 	import type { ReadingStatus } from '$lib/types';
 
 	const id = $derived(page.params.id!);
@@ -31,6 +31,7 @@
 	);
 	let notes = $state('');
 	let notesLoaded = $state(false);
+	let reloadToken = $state(0);
 	let movingThread = $state(false);
 	let movePickerOpen = $state(false);
 	let moveQuery = $state('');
@@ -250,15 +251,27 @@
 					{/each}
 				</div>
 
-				<button
-					class="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-					class:text-accent={sidebarOpen}
-					onclick={() => (sidebarOpen = !sidebarOpen)}
-					aria-pressed={sidebarOpen}
-					title={sidebarOpen ? 'Hide details' : 'Show details'}
-				>
-					<PanelRight class="h-3.5 w-3.5" />
-				</button>
+				<div class="flex items-center gap-0.5">
+					{#if isWebpage}
+						<button
+							class="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+							onclick={() => (reloadToken += 1)}
+							title="Reload page"
+							aria-label="Reload page"
+						>
+							<RotateCw class="h-3.5 w-3.5" />
+						</button>
+					{/if}
+					<button
+						class="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+						class:text-accent={sidebarOpen}
+						onclick={() => (sidebarOpen = !sidebarOpen)}
+						aria-pressed={sidebarOpen}
+						title={sidebarOpen ? 'Hide details' : 'Show details'}
+					>
+						<PanelRight class="h-3.5 w-3.5" />
+					</button>
+				</div>
 			</div>
 		{/if}
 
@@ -268,7 +281,7 @@
 				     PDF viewer state survive view switches. -->
 				<div class="absolute inset-0" class:hidden={mainView !== 'pdf'}>
 					{#if isWebpage}
-						<SourceViewer url={paper.sourceUrl!} />
+						<SourceViewer url={paper.sourceUrl!} paperId={paper.id} {reloadToken} />
 					{:else}
 						{#key paper.id}
 							<PdfViewer path={paper.pdfPath} paperId={paper.id} />

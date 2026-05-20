@@ -1,120 +1,146 @@
+<script module lang="ts">
+	// Cache live iframe elements keyed by paper id. When the user switches tabs
+	// we detach the iframe (keeping the element + its loaded document in memory)
+	// and reattach on return, preserving scroll position, login state, and any
+	// in-page JS without re-fetching the URL.
+	type CachedFrame = { iframe: HTMLIFrameElement; url: string };
+	const frameCache = new Map<string, CachedFrame>();
+</script>
+
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { Globe, ExternalLink, RotateCw } from 'lucide-svelte';
-	import { Button } from '$lib/components/ui';
-	import { openExternal } from '$lib/tauri/shell';
+	import { onMount, onDestroy, tick } from 'svelte';
 
-	let { url }: { url: string } = $props();
+	let {
+		url,
+		paperId,
+		reloadToken = 0
+	}: { url: string; paperId: string; reloadToken?: number } = $props();
+	let appliedReloadToken = 0;
 
-	let iframeEl = $state<HTMLIFrameElement | null>(null);
-	let blocked = $state(false);
-	let reloadKey = $state(0);
-	// Only evaluate framing once, on the first `load`. Many sites navigate the
-	// iframe after initial render (framekiller redirects, infinite scroll, ad
-	// trackers, single-page-app routing) — those secondary loads can be
-	// X-Frame-Options blocked even though the original page rendered fine, and
-	// we shouldn't flip back to the fallback in that case.
-	let initialCheckDone = false;
+	let containerEl = $state<HTMLDivElement | undefined>();
+	let attachedIframe: HTMLIFrameElement | null = null;
+	let attachedKey: string | null = null;
 
-	const hostname = $derived.by(() => {
-		try {
-			return new URL(url).hostname;
-		} catch {
-			return url;
-		}
-	});
-
-	const favicon = $derived(`https://${hostname}/favicon.ico`);
-
-	function onLoad() {
-		if (initialCheckDone) return;
-		initialCheckDone = true;
-		const f = iframeEl;
-		if (!f) return;
-		try {
-			const doc = f.contentDocument;
-			if (!doc) {
-				blocked = true;
-				return;
+	function buildIframe(forUrl: string): HTMLIFrameElement {
+		const f = document.createElement('iframe');
+		f.src = forUrl;
+		f.className = 'h-full w-full border-0 bg-background';
+		f.setAttribute(
+			'sandbox',
+			'allow-scripts allow-same-origin allow-popups allow-forms'
+		);
+		f.setAttribute('referrerpolicy', 'no-referrer');
+		f.setAttribute('data-tauri-drag-region', 'false');
+		f.tabIndex = 0;
+		f.title = (() => {
+			try {
+				return new URL(forUrl).hostname;
+			} catch {
+				return forUrl;
 			}
-			// `about:blank` after a real URL was requested usually means
-			// X-Frame-Options / CSP frame-ancestors stopped the load.
-			if (doc.location && doc.location.href === 'about:blank' && url !== 'about:blank') {
-				blocked = true;
-			}
-		} catch {
-			// Cross-origin access threw — that's the success path: the iframe
-			// loaded a real cross-origin page and the parent isn't allowed to
-			// introspect it.
-		}
+		})();
+		return f;
 	}
 
-	function reload() {
-		blocked = false;
-		initialCheckDone = false;
-		reloadKey += 1;
+	function attach(forPaperId: string, forUrl: string) {
+		if (!containerEl) return;
+		const key = `${forPaperId}::${forUrl}`;
+		if (attachedKey === key && attachedIframe && attachedIframe.parentNode === containerEl) {
+			return;
+		}
+		// Detach the previous iframe (it remains in cache).
+		if (attachedIframe && attachedIframe.parentNode === containerEl) {
+			containerEl.removeChild(attachedIframe);
+		}
+		attachedIframe = null;
+		attachedKey = null;
+
+		const cached = frameCache.get(forPaperId);
+		if (cached && cached.url === forUrl) {
+			containerEl.appendChild(cached.iframe);
+			attachedIframe = cached.iframe;
+			attachedKey = key;
+			try {
+				cached.iframe.contentWindow?.focus();
+			} catch {
+				/* no-op */
+			}
+			return;
+		}
+
+		const iframe = buildIframe(forUrl);
+		// Focus on every load so WKWebView keeps the iframe as the scroll
+		// target. Otherwise macOS scroll-latching relatches to the parent
+		// webview after idle time and wheel events stop reaching the iframe.
+		const onLoad = () => {
+			try {
+				iframe.contentWindow?.focus();
+			} catch {
+				/* cross-origin focus call is allowed but may no-op */
+			}
+		};
+		iframe.addEventListener('load', onLoad);
+		// Re-claim focus whenever the cursor enters the iframe area or the user
+		// interacts with it. Cheap, idempotent — and reliably keeps WKWebView's
+		// scroll latch pointed at the iframe.
+		const refocus = () => {
+			try {
+				iframe.contentWindow?.focus();
+			} catch {
+				/* no-op */
+			}
+		};
+		iframe.addEventListener('mouseenter', refocus);
+		iframe.addEventListener('pointerenter', refocus);
+		iframe.addEventListener('pointerdown', refocus);
+		containerEl.appendChild(iframe);
+		attachedIframe = iframe;
+		attachedKey = key;
+		frameCache.set(forPaperId, { iframe, url: forUrl });
 	}
 
 	onMount(() => {
-		const timer = setTimeout(() => {
-			if (initialCheckDone) return;
-			// Load event never fired after ~3.5s — treat as blocked.
-			initialCheckDone = true;
-			blocked = true;
-		}, 3500);
-		return () => clearTimeout(timer);
+		void tick().then(() => attach(paperId, url));
+	});
+
+	$effect(() => {
+		if (!containerEl) return;
+		// When the parent bumps reloadToken, drop the cached iframe so attach()
+		// rebuilds from scratch instead of reattaching the stale one.
+		if (reloadToken !== appliedReloadToken) {
+			appliedReloadToken = reloadToken;
+			const existing = frameCache.get(paperId);
+			if (existing && existing.iframe.parentNode === containerEl) {
+				containerEl.removeChild(existing.iframe);
+			}
+			frameCache.delete(paperId);
+			attachedIframe = null;
+			attachedKey = null;
+		}
+		attach(paperId, url);
+	});
+
+	onDestroy(() => {
+		// Detach the iframe from the container but keep it in the cache so the
+		// next mount can reattach without losing state.
+		if (attachedIframe && containerEl && attachedIframe.parentNode === containerEl) {
+			containerEl.removeChild(attachedIframe);
+		}
+		attachedIframe = null;
+		attachedKey = null;
 	});
 </script>
 
-<div class="relative h-full w-full">
-	{#if !blocked}
-		{#key reloadKey}
-			<iframe
-				bind:this={iframeEl}
-				src={url}
-				title={hostname}
-				class="h-full w-full border-0 bg-background"
-				sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
-				referrerpolicy="no-referrer"
-				onload={onLoad}
-			></iframe>
-		{/key}
-	{:else}
-		<div class="flex h-full items-center justify-center p-6">
-			<div class="w-full max-w-md rounded-lg border border-border/60 bg-card p-5 shadow-sm">
-				<div class="flex items-start gap-3">
-					<img
-						src={favicon}
-						alt=""
-						class="mt-0.5 h-6 w-6 shrink-0 rounded"
-						onerror={(e) => ((e.currentTarget as HTMLImageElement).style.visibility = 'hidden')}
-					/>
-					<div class="min-w-0 flex-1">
-						<div class="text-sm font-medium text-foreground">{hostname}</div>
-						<div class="mt-0.5 truncate font-mono text-[11px] text-muted-foreground" title={url}>
-							{url}
-						</div>
-					</div>
-				</div>
-				<p class="mt-4 text-xs leading-relaxed text-muted-foreground">
-					This site can't be displayed inside Re:OS (it refuses to be framed). The Summary and
-					Chat tabs still work — they fetch the page live via the Claude CLI.
-				</p>
-				<div class="mt-4 flex gap-2">
-					<Button size="sm" onclick={() => openExternal(url)}>
-						<ExternalLink class="h-3.5 w-3.5" />
-						Open in browser
-					</Button>
-					<Button size="sm" variant="subtle" onclick={reload}>
-						<RotateCw class="h-3.5 w-3.5" />
-						Try again
-					</Button>
-				</div>
-				<div class="mt-3 inline-flex items-center gap-1 text-[10px] text-muted-foreground">
-					<Globe class="h-3 w-3" />
-					Source URL
-				</div>
-			</div>
-		</div>
-	{/if}
-</div>
+<div
+	bind:this={containerEl}
+	class="h-full w-full"
+	data-tauri-drag-region="false"
+	onmouseenter={() => {
+		try {
+			attachedIframe?.contentWindow?.focus();
+		} catch {
+			/* no-op */
+		}
+	}}
+	role="presentation"
+></div>
