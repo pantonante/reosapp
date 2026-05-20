@@ -30,7 +30,7 @@
 		/>
 		<DialogPrimitive.Content
 			class={cn(
-				'panel fixed left-1/2 top-1/2 z-50 grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 p-6 duration-200',
+				'panel fixed left-1/2 top-1/2 z-50 grid max-h-[calc(100vh-4rem)] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto p-6 duration-200',
 				className
 			)}
 		>
