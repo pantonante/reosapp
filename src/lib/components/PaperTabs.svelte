@@ -5,11 +5,13 @@
 	import { papers, threads, ui, type TabRef } from '$lib/stores.svelte';
 	import { cn } from '$lib/utils/cn';
 	import { renderTitleHtml } from '$lib/utils/render-title';
-	import { X, Layers } from 'lucide-svelte';
+	import { X, Layers, MessageSquare } from 'lucide-svelte';
 
 	type Tab =
 		| { kind: 'paper'; id: string; title: string; status: string }
-		| { kind: 'thread'; id: string; title: string };
+		| { kind: 'thread'; id: string; title: string }
+		| { kind: 'paper-chat'; id: string; title: string }
+		| { kind: 'thread-chat'; id: string; title: string };
 
 	const tabs = $derived.by<Tab[]>(() => {
 		const out: Tab[] = [];
@@ -17,17 +19,35 @@
 			if (ref.kind === 'paper') {
 				const p = papers.get(ref.id);
 				if (p) out.push({ kind: 'paper', id: ref.id, title: p.title, status: p.readingStatus });
-			} else {
+			} else if (ref.kind === 'thread') {
 				const t = threads.get(ref.id);
 				if (t) out.push({ kind: 'thread', id: ref.id, title: t.title });
+			} else if (ref.kind === 'paper-chat') {
+				const p = papers.get(ref.id);
+				if (p) out.push({ kind: 'paper-chat', id: ref.id, title: p.title });
+			} else if (ref.kind === 'thread-chat') {
+				const t = threads.get(ref.id);
+				if (t) out.push({ kind: 'thread-chat', id: ref.id, title: t.title });
 			}
 		}
 		return out;
 	});
 
+	function tabPath(tab: Tab): string {
+		switch (tab.kind) {
+			case 'paper':
+				return `/paper/${tab.id}`;
+			case 'thread':
+				return `/threads/${tab.id}`;
+			case 'paper-chat':
+				return `/paper/${tab.id}/chat`;
+			case 'thread-chat':
+				return `/threads/${tab.id}/chat`;
+		}
+	}
+
 	function isActive(tab: Tab): boolean {
-		if (tab.kind === 'paper') return page.url.pathname === `/paper/${tab.id}`;
-		return page.url.pathname === `/threads/${tab.id}`;
+		return page.url.pathname === tabPath(tab);
 	}
 
 	function activate(tab: Tab) {
@@ -35,22 +55,36 @@
 		// with a stale reference), don't navigate — that would re-add it via
 		// the [id] page's openPaper effect.
 		if (!ui.openTabs.some((t) => t.kind === tab.kind && t.id === tab.id)) return;
-		if (tab.kind === 'paper') {
-			ui.activePaperId = tab.id;
-			goto(`/paper/${tab.id}`);
-		} else {
-			ui.activeThreadId = tab.id;
-			goto(`/threads/${tab.id}`);
-		}
+		if (tab.kind === 'paper' || tab.kind === 'paper-chat') ui.activePaperId = tab.id;
+		else ui.activeThreadId = tab.id;
+		goto(tabPath(tab));
 	}
 
 	function close(tab: Tab, e: MouseEvent) {
 		e.stopPropagation();
 		const wasActive = isActive(tab);
-		const next = tab.kind === 'paper' ? ui.closePaper(tab.id) : ui.closeThread(tab.id);
+		let next: string | null;
+		switch (tab.kind) {
+			case 'paper':
+				next = ui.closePaper(tab.id);
+				break;
+			case 'thread':
+				next = ui.closeThread(tab.id);
+				break;
+			case 'paper-chat':
+				next = ui.closePaperChat(tab.id);
+				break;
+			case 'thread-chat':
+				next = ui.closeThreadChat(tab.id);
+				break;
+		}
 		if (wasActive) {
 			if (next) {
-				goto(tab.kind === 'paper' ? `/paper/${next}` : `/threads/${next}`);
+				const nextPath =
+					tab.kind === 'paper' || tab.kind === 'paper-chat'
+						? `/paper/${next}`
+						: `/threads/${next}`;
+				goto(nextPath);
 			} else {
 				goto('/');
 			}
@@ -254,10 +288,12 @@
 				{/if}
 				{#if tab.kind === 'paper'}
 					<span class={cn('h-1.5 w-1.5 rounded-full', statusDot(tab.status))}></span>
-				{:else}
+				{:else if tab.kind === 'thread'}
 					<Layers class="h-3 w-3" />
+				{:else}
+					<MessageSquare class="h-3 w-3" />
 				{/if}
-				<span class="tab-title max-w-[16ch] truncate" title={tab.title}>{@html renderTitleHtml(tab.title)}</span>
+				<span class="tab-title max-w-[16ch] truncate" title={tab.kind === 'paper-chat' || tab.kind === 'thread-chat' ? `Chat: ${tab.title}` : tab.title}>{#if tab.kind === 'paper-chat' || tab.kind === 'thread-chat'}<span class="text-muted-foreground">Chat: </span>{/if}{@html renderTitleHtml(tab.title)}</span>
 				<button
 					type="button"
 					class="rounded-sm p-0.5 opacity-0 transition-opacity hover:bg-foreground/10 group-hover:opacity-100"

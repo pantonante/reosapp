@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
-	import { papers, threads, ui } from '$lib/stores.svelte';
+	import { goto } from '$app/navigation';
+	import { papers, threads, ui, type MainView } from '$lib/stores.svelte';
 	import { Button, Badge, Textarea, Separator, Dialog, Input } from '$lib/components/ui';
 	import PdfViewer from '$lib/components/PdfViewer.svelte';
 	import SourceViewer from '$lib/components/SourceViewer.svelte';
@@ -16,10 +17,12 @@
 	const paper = $derived(papers.get(id));
 	const isWebpage = $derived(!!paper?.sourceUrl && !paper?.pdfPath);
 
-	type MainView = 'pdf' | 'summary' | 'chat';
 	type SidePanel = 'info' | 'notes';
 
-	let mainView = $state<MainView>('pdf');
+	const mainView = $derived(ui.getPaperView(id));
+	function setMainView(v: MainView) {
+		ui.setPaperView(id, v);
+	}
 	let panel = $state<SidePanel>('info');
 	// Auto-collapse the right detail panel on narrow viewports (e.g. Mac half-screen)
 	// where a 300px panel would leave the main pane too cramped to use.
@@ -231,7 +234,15 @@
 								: 'text-muted-foreground hover:text-foreground'}"
 							role="tab"
 							aria-selected={mainView === t.id}
-							onclick={() => (mainView = t.id)}
+							title={t.id === 'chat' ? 'Chat (⌘-click to open in new tab)' : undefined}
+							onclick={(e) => {
+								if (t.id === 'chat' && (e.metaKey || e.ctrlKey)) {
+									ui.openPaperChat(id);
+									goto(`/paper/${id}/chat`);
+									return;
+								}
+								setMainView(t.id);
+							}}
 						>
 							<Icon class="h-3.5 w-3.5" />
 							{t.label}

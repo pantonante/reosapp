@@ -328,7 +328,13 @@ function writeLocal(key: string, value: unknown) {
 	localStorage.setItem(key, JSON.stringify(value));
 }
 
-export type TabRef = { kind: 'paper' | 'thread'; id: string };
+export type TabRef =
+	| { kind: 'paper'; id: string }
+	| { kind: 'thread'; id: string }
+	| { kind: 'paper-chat'; id: string }
+	| { kind: 'thread-chat'; id: string };
+
+export type MainView = 'pdf' | 'summary' | 'chat';
 
 export const ui = (() => {
 	let commandPaletteOpen = $state(false);
@@ -342,6 +348,8 @@ export const ui = (() => {
 	let pdfFullscreen = $state(false);
 	let activePaperId = $state<string | null>(null);
 	let activeThreadId = $state<string | null>(null);
+	// Per-paper sub-view memory (pdf/summary/chat). In-memory only — resets on reload.
+	let paperView = $state<Record<string, MainView>>({});
 	// Tracks the tab matching the current route, set by the layout effect.
 	// Used to know which tab to replace on a plain (non-cmd) click.
 	let activeTab = $state<TabRef | null>(null);
@@ -360,7 +368,13 @@ export const ui = (() => {
 		}
 	}
 	// The inbox thread is sidebar-only — strip any stale tab that references it.
-	const cleaned = tabOrder.filter((t) => !(t.kind === 'thread' && t.id === INBOX_THREAD_ID));
+	const cleaned = tabOrder.filter(
+		(t) =>
+			!(
+				(t.kind === 'thread' || t.kind === 'thread-chat') &&
+				t.id === INBOX_THREAD_ID
+			)
+	);
 	if (cleaned.length !== tabOrder.length) {
 		tabOrder = cleaned;
 		writeLocal('reos:tabOrder', tabOrder);
@@ -478,6 +492,12 @@ export const ui = (() => {
 			lastPath = v;
 			writeLocal('reos:lastPath', v);
 		},
+		getPaperView(id: string): MainView {
+			return paperView[id] ?? 'pdf';
+		},
+		setPaperView(id: string, v: MainView) {
+			paperView = { ...paperView, [id]: v };
+		},
 		openPaper(id: string, opts?: { replace?: boolean }) {
 			const existing = tabOrder.some((t) => t.kind === 'paper' && t.id === id);
 			if (!existing) {
@@ -500,7 +520,10 @@ export const ui = (() => {
 		closePaper(id: string): string | null {
 			const idx = tabOrder.findIndex((t) => t.kind === 'paper' && t.id === id);
 			if (idx === -1) return null;
-			tabOrder = tabOrder.filter((_, i) => i !== idx);
+			// Drop the paper tab and any chat tab attached to it.
+			tabOrder = tabOrder.filter(
+				(t, i) => i !== idx && !(t.kind === 'paper-chat' && t.id === id)
+			);
 			persistTabs();
 			if (activePaperId === id) {
 				const remaining = paperIds();
@@ -511,14 +534,43 @@ export const ui = (() => {
 			return activePaperId;
 		},
 		closeOtherPapers(id: string) {
-			tabOrder = tabOrder.filter((t) => t.kind !== 'paper' || t.id === id);
+			tabOrder = tabOrder.filter(
+				(t) =>
+					(t.kind !== 'paper' || t.id === id) &&
+					(t.kind !== 'paper-chat' || t.id === id)
+			);
 			activePaperId = id;
 			persistTabs();
 		},
 		closeAllPapers() {
-			tabOrder = tabOrder.filter((t) => t.kind !== 'paper');
+			tabOrder = tabOrder.filter((t) => t.kind !== 'paper' && t.kind !== 'paper-chat');
 			activePaperId = null;
 			persistTabs();
+		},
+		openPaperChat(id: string, opts?: { replace?: boolean }) {
+			const existing = tabOrder.some((t) => t.kind === 'paper-chat' && t.id === id);
+			if (!existing) {
+				const ref: TabRef = { kind: 'paper-chat', id };
+				const replaceIdx =
+					opts?.replace && activeTab
+						? tabOrder.findIndex(
+								(t) => t.kind === activeTab!.kind && t.id === activeTab!.id
+							)
+						: -1;
+				if (replaceIdx !== -1) {
+					tabOrder = tabOrder.map((t, i) => (i === replaceIdx ? ref : t));
+				} else {
+					tabOrder = [...tabOrder, ref];
+				}
+				persistTabs();
+			}
+		},
+		closePaperChat(id: string): string | null {
+			const idx = tabOrder.findIndex((t) => t.kind === 'paper-chat' && t.id === id);
+			if (idx === -1) return null;
+			tabOrder = tabOrder.filter((_, i) => i !== idx);
+			persistTabs();
+			return activePaperId;
 		},
 		openThread(id: string, opts?: { replace?: boolean }) {
 			if (id === INBOX_THREAD_ID) {
@@ -547,7 +599,10 @@ export const ui = (() => {
 		closeThread(id: string): string | null {
 			const idx = tabOrder.findIndex((t) => t.kind === 'thread' && t.id === id);
 			if (idx === -1) return null;
-			tabOrder = tabOrder.filter((_, i) => i !== idx);
+			// Drop the thread tab and any chat tab attached to it.
+			tabOrder = tabOrder.filter(
+				(t, i) => i !== idx && !(t.kind === 'thread-chat' && t.id === id)
+			);
 			persistTabs();
 			if (activeThreadId === id) {
 				const remaining = threadIds();
@@ -558,9 +613,35 @@ export const ui = (() => {
 			return activeThreadId;
 		},
 		closeAllThreads() {
-			tabOrder = tabOrder.filter((t) => t.kind !== 'thread');
+			tabOrder = tabOrder.filter((t) => t.kind !== 'thread' && t.kind !== 'thread-chat');
 			activeThreadId = null;
 			persistTabs();
+		},
+		openThreadChat(id: string, opts?: { replace?: boolean }) {
+			if (id === INBOX_THREAD_ID) return;
+			const existing = tabOrder.some((t) => t.kind === 'thread-chat' && t.id === id);
+			if (!existing) {
+				const ref: TabRef = { kind: 'thread-chat', id };
+				const replaceIdx =
+					opts?.replace && activeTab
+						? tabOrder.findIndex(
+								(t) => t.kind === activeTab!.kind && t.id === activeTab!.id
+							)
+						: -1;
+				if (replaceIdx !== -1) {
+					tabOrder = tabOrder.map((t, i) => (i === replaceIdx ? ref : t));
+				} else {
+					tabOrder = [...tabOrder, ref];
+				}
+				persistTabs();
+			}
+		},
+		closeThreadChat(id: string): string | null {
+			const idx = tabOrder.findIndex((t) => t.kind === 'thread-chat' && t.id === id);
+			if (idx === -1) return null;
+			tabOrder = tabOrder.filter((_, i) => i !== idx);
+			persistTabs();
+			return activeThreadId;
 		},
 		moveTab(from: TabRef, to: TabRef, position: 'before' | 'after') {
 			const fromIdx = tabOrder.findIndex((t) => t.kind === from.kind && t.id === from.id);
@@ -576,8 +657,10 @@ export const ui = (() => {
 		},
 		closeOtherTabs(tab: TabRef) {
 			tabOrder = tabOrder.filter((t) => t.kind === tab.kind && t.id === tab.id);
-			activePaperId = tab.kind === 'paper' ? tab.id : null;
-			activeThreadId = tab.kind === 'thread' ? tab.id : null;
+			activePaperId =
+				tab.kind === 'paper' || tab.kind === 'paper-chat' ? tab.id : null;
+			activeThreadId =
+				tab.kind === 'thread' || tab.kind === 'thread-chat' ? tab.id : null;
 			persistTabs();
 		},
 		closeTabsToRight(tab: TabRef) {

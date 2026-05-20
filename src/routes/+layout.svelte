@@ -30,9 +30,13 @@
 
 	$effect(() => {
 		const path = page.url.pathname;
-		const paperMatch = path.match(/^\/paper\/(.+)$/);
+		const paperChatMatch = path.match(/^\/paper\/([^/]+)\/chat$/);
+		const threadChatMatch = path.match(/^\/threads\/([^/]+)\/chat$/);
+		const paperMatch = path.match(/^\/paper\/([^/]+)$/);
 		const threadMatch = path.match(/^\/threads\/([^/]+)$/);
-		if (paperMatch) ui.activeTab = { kind: 'paper', id: paperMatch[1] };
+		if (paperChatMatch) ui.activeTab = { kind: 'paper-chat', id: paperChatMatch[1] };
+		else if (threadChatMatch) ui.activeTab = { kind: 'thread-chat', id: threadChatMatch[1] };
+		else if (paperMatch) ui.activeTab = { kind: 'paper', id: paperMatch[1] };
 		else if (threadMatch) ui.activeTab = { kind: 'thread', id: threadMatch[1] };
 		else ui.activeTab = null;
 		if (!booting) ui.lastPath = path;

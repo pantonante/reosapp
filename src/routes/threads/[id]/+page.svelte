@@ -237,7 +237,13 @@
 					></textarea>
 				</div>
 				<div class="flex flex-wrap items-center gap-2">
-					<Button variant="subtle" onclick={() => goto(`/threads/${thread.id}/chat`)}>
+					<Button
+						variant="subtle"
+						onclick={() => {
+							ui.openThreadChat(thread.id);
+							goto(`/threads/${thread.id}/chat`);
+						}}
+					>
 						<MessageSquare class="h-4 w-4" />
 						Chat
 					</Button>
