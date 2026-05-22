@@ -10,6 +10,7 @@
 	import PaperSummary from '$lib/components/PaperSummary.svelte';
 	import { revealInFinder, openExternal } from '$lib/tauri/shell';
 	import { readNotes, writeNotes } from '$lib/tauri/fs';
+	import { ask } from '@tauri-apps/plugin-dialog';
 	import { ExternalLink, FolderOpen, Star, FileText, Globe, Sparkles, MessageSquare, PanelRight, Inbox, Check, ArrowRightLeft, Github, Trash2, RotateCw } from 'lucide-svelte';
 	import type { ReadingStatus } from '$lib/types';
 
@@ -175,6 +176,16 @@
 
 	async function removeLink(url: string) {
 		if (!paper) return;
+		const ok = await ask(
+			`Remove this link from the paper?\n\n${url}\n\nThe link is only detached from this paper — the destination page itself is not affected. You can paste the URL back later to re-add it.`,
+			{
+				title: 'Remove link',
+				kind: 'warning',
+				okLabel: 'Remove',
+				cancelLabel: 'Cancel'
+			}
+		);
+		if (!ok) return;
 		await papers.update(paper.id, {
 			links: (paper.links ?? []).filter((l) => l !== url)
 		});

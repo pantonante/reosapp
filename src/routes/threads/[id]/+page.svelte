@@ -17,6 +17,7 @@
 	import type { ReadingStatus, Thread, ThreadStatus } from '$lib/types';
 	import PaperCard from '$lib/components/PaperCard.svelte';
 	import { cn } from '$lib/utils/cn';
+	import { ask } from '@tauri-apps/plugin-dialog';
 
 	const id = $derived(page.params.id!);
 	const thread = $derived(threads.get(id));
@@ -110,6 +111,19 @@
 	}
 
 	async function removePaper(paperId: string) {
+		if (!thread) return;
+		const p = papers.get(paperId);
+		const title = p?.title ?? 'this paper';
+		const ok = await ask(
+			`Move "${title}" out of "${thread.title}" and back to the inbox? The paper, its PDF, notes, and chats are kept — only the thread membership is removed.`,
+			{
+				title: 'Remove from thread',
+				kind: 'warning',
+				okLabel: 'Move to inbox',
+				cancelLabel: 'Cancel'
+			}
+		);
+		if (!ok) return;
 		await papers.move(paperId, 'inbox');
 	}
 
@@ -117,9 +131,15 @@
 		if (!thread) return;
 		const subCount = subThreads.length;
 		const msg = subCount
-			? `Delete thread "${thread.title}" and ${subCount} sub-thread${subCount === 1 ? '' : 's'}? Papers move to inbox.`
-			: `Delete thread "${thread.title}"? Papers stay in your library.`;
-		if (!confirm(msg)) return;
+			? `Permanently delete thread "${thread.title}" and its ${subCount} sub-thread${subCount === 1 ? '' : 's'}?\n\nThis will:\n• Delete this thread, its synthesis notes, and its chats\n• Delete all ${subCount} nested sub-thread${subCount === 1 ? '' : 's'} (and their syntheses and chats)\n• Move every paper inside back to the inbox — papers, PDFs, notes, and annotations are kept\n• Remove the thread folders from disk\n\nThis cannot be undone.`
+			: `Permanently delete thread "${thread.title}"?\n\nThis will:\n• Delete this thread, its synthesis notes, and its chats\n• Move its papers back to the inbox — papers, PDFs, notes, and annotations are kept\n• Remove the thread folder from disk\n\nThis cannot be undone.`;
+		const ok = await ask(msg, {
+			title: 'Delete thread',
+			kind: 'warning',
+			okLabel: 'Delete',
+			cancelLabel: 'Cancel'
+		});
+		if (!ok) return;
 		const tid = thread.id;
 		ui.closeThread(tid);
 		await threads.remove(tid);

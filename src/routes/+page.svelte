@@ -5,6 +5,7 @@
 	import { Button } from '$lib/components/ui';
 	import { Plus, Trash2 } from 'lucide-svelte';
 	import { ui } from '$lib/stores.svelte';
+	import { ask } from '@tauri-apps/plugin-dialog';
 
 	const unfiled = $derived(
 		[...papers.items.filter((p) => !p.threadId || p.threadId === 'inbox')].sort((a, b) =>
@@ -23,7 +24,11 @@
 	async function deletePaper(id: string) {
 		const p = papers.get(id);
 		if (!p) return;
-		if (!confirm(`Delete "${p.title}"? This removes the PDF, notes, and chats from disk.`)) return;
+		const ok = await ask(
+			`Permanently delete "${p.title}"?\n\nThis will:\n• Remove the paper from your library and from any threads it belongs to\n• Delete the PDF file and the paper's folder from disk\n• Delete all notes, annotations, and chats attached to this paper\n• Delete its cached summary\n\nThis cannot be undone.`,
+			{ title: 'Delete paper', kind: 'warning', okLabel: 'Delete', cancelLabel: 'Cancel' }
+		);
+		if (!ok) return;
 		await papers.remove(id);
 	}
 </script>
