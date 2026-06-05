@@ -132,6 +132,12 @@
 		await papers.update(paper.id, { publishedDate: publishedDateDraft });
 	}
 
+	function formatPublishedDate(value: string): string {
+		const d = new Date(value);
+		if (isNaN(d.getTime())) return value;
+		return d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+	}
+
 	let newLink = $state('');
 
 	function normalizeUrl(raw: string): string | null {
@@ -416,6 +422,13 @@
 											onblur={savePublishedDate}
 											class="mt-2 h-8 text-xs"
 										/>
+									</div>
+								{:else if paper.publishedDate}
+									<div>
+										<div class="text-[10px] uppercase tracking-wider text-muted-foreground">
+											Published
+										</div>
+										<p class="mt-2 text-xs">{formatPublishedDate(paper.publishedDate)}</p>
 									</div>
 								{/if}
 
