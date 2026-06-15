@@ -9,8 +9,6 @@ pub enum AppError {
     Serde(#[from] serde_json::Error),
     #[error("home directory not found")]
     NoHome,
-    #[error("{0}")]
-    Other(String),
 }
 
 impl Serialize for AppError {

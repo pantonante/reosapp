@@ -25,6 +25,57 @@ pub struct ExtractedMetadata {
     pub abstract_text: String,
 }
 
+/// Parse the JSON object Claude returned into `ExtractedMetadata`.
+///
+/// We parse into a tolerant `serde_json::Value` rather than deserializing
+/// directly into a struct: the model occasionally emits the same key twice
+/// (e.g. a duplicate `year`), which serde's struct deserializer rejects with
+/// "duplicate field". Reading fields off a `Value` keeps the last occurrence
+/// and never fails on duplicates.
+fn parse_metadata(json_str: &str) -> Result<ExtractedMetadata, String> {
+    let value: serde_json::Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("failed to parse claude JSON: {e}\n--- json ---\n{json_str}"))?;
+
+    let obj = value
+        .as_object()
+        .ok_or_else(|| format!("claude JSON was not an object:\n{json_str}"))?;
+
+    let title = obj
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+
+    let authors = obj
+        .get("authors")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let year = match obj.get("year") {
+        Some(serde_json::Value::String(s)) => s.clone(),
+        Some(serde_json::Value::Number(n)) => n.to_string(),
+        _ => String::new(),
+    };
+
+    let abstract_text = obj
+        .get("abstract")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+
+    Ok(ExtractedMetadata {
+        title,
+        authors,
+        year,
+        abstract_text,
+    })
+}
+
 #[tauri::command]
 pub async fn extract_pdf_metadata(args: ExtractPdfArgs) -> Result<ExtractedMetadata, String> {
     if !std::path::Path::new(&args.pdf_path).exists() {
@@ -78,30 +129,7 @@ pub async fn extract_pdf_metadata(args: ExtractPdfArgs) -> Result<ExtractedMetad
         .ok_or_else(|| format!("no JSON object close found in claude output:\n{stdout}"))?;
     let json_str = &stdout[start..=end];
 
-    #[derive(Deserialize)]
-    struct Raw {
-        title: Option<String>,
-        authors: Option<Vec<String>>,
-        year: Option<serde_json::Value>,
-        #[serde(rename = "abstract")]
-        abstract_text: Option<String>,
-    }
-
-    let raw: Raw = serde_json::from_str(json_str)
-        .map_err(|e| format!("failed to parse claude JSON: {e}\n--- json ---\n{json_str}"))?;
-
-    let year = match raw.year {
-        Some(serde_json::Value::String(s)) => s,
-        Some(serde_json::Value::Number(n)) => n.to_string(),
-        _ => String::new(),
-    };
-
-    Ok(ExtractedMetadata {
-        title: raw.title.unwrap_or_default(),
-        authors: raw.authors.unwrap_or_default(),
-        year,
-        abstract_text: raw.abstract_text.unwrap_or_default(),
-    })
+    parse_metadata(json_str)
 }
 
 #[tauri::command]
@@ -156,28 +184,5 @@ pub async fn extract_webpage_metadata(
         .ok_or_else(|| format!("no JSON object close found in claude output:\n{stdout}"))?;
     let json_str = &stdout[start..=end];
 
-    #[derive(Deserialize)]
-    struct Raw {
-        title: Option<String>,
-        authors: Option<Vec<String>>,
-        year: Option<serde_json::Value>,
-        #[serde(rename = "abstract")]
-        abstract_text: Option<String>,
-    }
-
-    let raw: Raw = serde_json::from_str(json_str)
-        .map_err(|e| format!("failed to parse claude JSON: {e}\n--- json ---\n{json_str}"))?;
-
-    let year = match raw.year {
-        Some(serde_json::Value::String(s)) => s,
-        Some(serde_json::Value::Number(n)) => n.to_string(),
-        _ => String::new(),
-    };
-
-    Ok(ExtractedMetadata {
-        title: raw.title.unwrap_or_default(),
-        authors: raw.authors.unwrap_or_default(),
-        year,
-        abstract_text: raw.abstract_text.unwrap_or_default(),
-    })
+    parse_metadata(json_str)
 }
