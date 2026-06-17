@@ -148,7 +148,7 @@
 
 	function openPaper(pid: string, e?: MouseEvent) {
 		const newTab = !!(e && (e.metaKey || e.ctrlKey));
-		ui.openPaper(pid, { replace: !newTab });
+		ui.openPaper(pid, { newTab });
 		goto(`/paper/${pid}`);
 	}
 
@@ -160,7 +160,7 @@
 
 	function openThread(tid: string, e?: MouseEvent) {
 		const newTab = !!(e && (e.metaKey || e.ctrlKey));
-		ui.openThread(tid, { replace: !newTab });
+		ui.openThread(tid, { newTab });
 		goto(`/threads/${tid}`);
 	}
 

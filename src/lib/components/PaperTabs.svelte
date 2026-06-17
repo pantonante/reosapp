@@ -8,26 +8,28 @@
 	import { X, Layers, MessageSquare } from 'lucide-svelte';
 
 	type Tab =
-		| { kind: 'paper'; id: string; title: string; status: string }
-		| { kind: 'thread'; id: string; title: string }
-		| { kind: 'paper-chat'; id: string; title: string }
-		| { kind: 'thread-chat'; id: string; title: string };
+		| { kind: 'paper'; id: string; title: string; status: string; temporary: boolean }
+		| { kind: 'thread'; id: string; title: string; temporary: boolean }
+		| { kind: 'paper-chat'; id: string; title: string; temporary: boolean }
+		| { kind: 'thread-chat'; id: string; title: string; temporary: boolean };
 
 	const tabs = $derived.by<Tab[]>(() => {
 		const out: Tab[] = [];
 		for (const ref of ui.openTabs) {
+			const temporary = ref.temporary ?? false;
 			if (ref.kind === 'paper') {
 				const p = papers.get(ref.id);
-				if (p) out.push({ kind: 'paper', id: ref.id, title: p.title, status: p.readingStatus });
+				if (p)
+					out.push({ kind: 'paper', id: ref.id, title: p.title, status: p.readingStatus, temporary });
 			} else if (ref.kind === 'thread') {
 				const t = threads.get(ref.id);
-				if (t) out.push({ kind: 'thread', id: ref.id, title: t.title });
+				if (t) out.push({ kind: 'thread', id: ref.id, title: t.title, temporary });
 			} else if (ref.kind === 'paper-chat') {
 				const p = papers.get(ref.id);
-				if (p) out.push({ kind: 'paper-chat', id: ref.id, title: p.title });
+				if (p) out.push({ kind: 'paper-chat', id: ref.id, title: p.title, temporary });
 			} else if (ref.kind === 'thread-chat') {
 				const t = threads.get(ref.id);
-				if (t) out.push({ kind: 'thread-chat', id: ref.id, title: t.title });
+				if (t) out.push({ kind: 'thread-chat', id: ref.id, title: t.title, temporary });
 			}
 		}
 		return out;
@@ -258,10 +260,12 @@
 					active
 						? 'border-border/70 bg-secondary text-foreground'
 						: 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground',
+					tab.temporary && 'italic',
 					draggingKey === key && 'opacity-40'
 				)}
 				style="-webkit-user-drag: element;"
 				onclick={() => activate(tab)}
+				ondblclick={() => ui.pinTab({ kind: tab.kind, id: tab.id })}
 				onkeydown={(e) => {
 					if (e.key === 'Enter' || e.key === ' ') {
 						e.preventDefault();

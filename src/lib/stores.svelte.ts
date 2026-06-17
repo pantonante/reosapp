@@ -328,11 +328,15 @@ function writeLocal(key: string, value: unknown) {
 	localStorage.setItem(key, JSON.stringify(value));
 }
 
+// `temporary` mirrors VSCode's "preview" tabs: a single-click open lands in the
+// one temporary tab (reusing/overriding it), while cmd-clicks and double-clicks
+// produce permanent tabs. Absent/false means a permanent tab. There is at most
+// one temporary tab at any time.
 export type TabRef =
-	| { kind: 'paper'; id: string }
-	| { kind: 'thread'; id: string }
-	| { kind: 'paper-chat'; id: string }
-	| { kind: 'thread-chat'; id: string };
+	| { kind: 'paper'; id: string; temporary?: boolean }
+	| { kind: 'thread'; id: string; temporary?: boolean }
+	| { kind: 'paper-chat'; id: string; temporary?: boolean }
+	| { kind: 'thread-chat'; id: string; temporary?: boolean };
 
 export type MainView = 'pdf' | 'summary' | 'chat';
 
@@ -385,6 +389,29 @@ export const ui = (() => {
 
 	function persistTabs() {
 		writeLocal('reos:tabOrder', tabOrder);
+	}
+
+	// Materialize a tab for `ref`, honoring the temporary-tab (preview) model:
+	//  - if the item is already open, leave its tab and temporary state alone;
+	//  - a `newTab` open (cmd/ctrl-click) appends a fresh permanent tab;
+	//  - a plain open reuses the existing temporary tab if one exists (overriding
+	//    its content in place), otherwise appends a new temporary tab.
+	function placeTab(ref: TabRef, opts?: { newTab?: boolean }) {
+		const existing = tabOrder.some((t) => t.kind === ref.kind && t.id === ref.id);
+		if (existing) return;
+		if (opts?.newTab) {
+			tabOrder = [...tabOrder, { ...ref, temporary: false }];
+			persistTabs();
+			return;
+		}
+		const tempIdx = tabOrder.findIndex((t) => t.temporary);
+		const next = { ...ref, temporary: true };
+		if (tempIdx !== -1) {
+			tabOrder = tabOrder.map((t, i) => (i === tempIdx ? next : t));
+		} else {
+			tabOrder = [...tabOrder, next];
+		}
+		persistTabs();
 	}
 
 	function paperIds(): string[] {
@@ -498,23 +525,8 @@ export const ui = (() => {
 		setPaperView(id: string, v: MainView) {
 			paperView = { ...paperView, [id]: v };
 		},
-		openPaper(id: string, opts?: { replace?: boolean }) {
-			const existing = tabOrder.some((t) => t.kind === 'paper' && t.id === id);
-			if (!existing) {
-				const ref: TabRef = { kind: 'paper', id };
-				const replaceIdx =
-					opts?.replace && activeTab
-						? tabOrder.findIndex(
-								(t) => t.kind === activeTab!.kind && t.id === activeTab!.id
-							)
-						: -1;
-				if (replaceIdx !== -1) {
-					tabOrder = tabOrder.map((t, i) => (i === replaceIdx ? ref : t));
-				} else {
-					tabOrder = [...tabOrder, ref];
-				}
-				persistTabs();
-			}
+		openPaper(id: string, opts?: { newTab?: boolean }) {
+			placeTab({ kind: 'paper', id }, opts);
 			activePaperId = id;
 		},
 		closePaper(id: string): string | null {
@@ -547,23 +559,9 @@ export const ui = (() => {
 			activePaperId = null;
 			persistTabs();
 		},
-		openPaperChat(id: string, opts?: { replace?: boolean }) {
-			const existing = tabOrder.some((t) => t.kind === 'paper-chat' && t.id === id);
-			if (!existing) {
-				const ref: TabRef = { kind: 'paper-chat', id };
-				const replaceIdx =
-					opts?.replace && activeTab
-						? tabOrder.findIndex(
-								(t) => t.kind === activeTab!.kind && t.id === activeTab!.id
-							)
-						: -1;
-				if (replaceIdx !== -1) {
-					tabOrder = tabOrder.map((t, i) => (i === replaceIdx ? ref : t));
-				} else {
-					tabOrder = [...tabOrder, ref];
-				}
-				persistTabs();
-			}
+		openPaperChat(id: string) {
+			// Chats are opened deliberately, so they always get a permanent tab.
+			placeTab({ kind: 'paper-chat', id }, { newTab: true });
 		},
 		closePaperChat(id: string): string | null {
 			const idx = tabOrder.findIndex((t) => t.kind === 'paper-chat' && t.id === id);
@@ -572,28 +570,13 @@ export const ui = (() => {
 			persistTabs();
 			return activePaperId;
 		},
-		openThread(id: string, opts?: { replace?: boolean }) {
+		openThread(id: string, opts?: { newTab?: boolean }) {
 			if (id === INBOX_THREAD_ID) {
 				// Inbox is sidebar-only; don't materialize it as a tab.
 				activeThreadId = id;
 				return;
 			}
-			const existing = tabOrder.some((t) => t.kind === 'thread' && t.id === id);
-			if (!existing) {
-				const ref: TabRef = { kind: 'thread', id };
-				const replaceIdx =
-					opts?.replace && activeTab
-						? tabOrder.findIndex(
-								(t) => t.kind === activeTab!.kind && t.id === activeTab!.id
-							)
-						: -1;
-				if (replaceIdx !== -1) {
-					tabOrder = tabOrder.map((t, i) => (i === replaceIdx ? ref : t));
-				} else {
-					tabOrder = [...tabOrder, ref];
-				}
-				persistTabs();
-			}
+			placeTab({ kind: 'thread', id }, opts);
 			activeThreadId = id;
 		},
 		closeThread(id: string): string | null {
@@ -617,24 +600,10 @@ export const ui = (() => {
 			activeThreadId = null;
 			persistTabs();
 		},
-		openThreadChat(id: string, opts?: { replace?: boolean }) {
+		openThreadChat(id: string) {
 			if (id === INBOX_THREAD_ID) return;
-			const existing = tabOrder.some((t) => t.kind === 'thread-chat' && t.id === id);
-			if (!existing) {
-				const ref: TabRef = { kind: 'thread-chat', id };
-				const replaceIdx =
-					opts?.replace && activeTab
-						? tabOrder.findIndex(
-								(t) => t.kind === activeTab!.kind && t.id === activeTab!.id
-							)
-						: -1;
-				if (replaceIdx !== -1) {
-					tabOrder = tabOrder.map((t, i) => (i === replaceIdx ? ref : t));
-				} else {
-					tabOrder = [...tabOrder, ref];
-				}
-				persistTabs();
-			}
+			// Chats are opened deliberately, so they always get a permanent tab.
+			placeTab({ kind: 'thread-chat', id }, { newTab: true });
 		},
 		closeThreadChat(id: string): string | null {
 			const idx = tabOrder.findIndex((t) => t.kind === 'thread-chat' && t.id === id);
@@ -654,6 +623,20 @@ export const ui = (() => {
 			next.splice(toIdx, 0, moved);
 			tabOrder = next;
 			persistTabs();
+		},
+		// Promote a temporary (preview) tab to a permanent one. Triggered by
+		// double-clicking the tab; subsequent plain opens then create a new
+		// temporary tab instead of overriding this one.
+		pinTab(ref: TabRef) {
+			let changed = false;
+			tabOrder = tabOrder.map((t) => {
+				if (t.kind === ref.kind && t.id === ref.id && t.temporary) {
+					changed = true;
+					return { ...t, temporary: false };
+				}
+				return t;
+			});
+			if (changed) persistTabs();
 		},
 		closeOtherTabs(tab: TabRef) {
 			tabOrder = tabOrder.filter((t) => t.kind === tab.kind && t.id === tab.id);

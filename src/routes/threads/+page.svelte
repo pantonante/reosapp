@@ -57,7 +57,7 @@
 
 	function open(t: Thread, e?: MouseEvent) {
 		const newTab = !!(e && (e.metaKey || e.ctrlKey));
-		ui.openThread(t.id, { replace: !newTab });
+		ui.openThread(t.id, { newTab });
 		goto(`/threads/${t.id}`);
 	}
 

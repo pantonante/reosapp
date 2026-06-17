@@ -223,7 +223,7 @@
 			const id = evt.target.id();
 			const orig = evt.originalEvent as MouseEvent | undefined;
 			const newTab = !!(orig && (orig.metaKey || orig.ctrlKey));
-			ui.openPaper(id, { replace: !newTab });
+			ui.openPaper(id, { newTab });
 			goto(`/paper/${id}`);
 		});
 

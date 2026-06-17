@@ -46,7 +46,7 @@
 
 	function open(id: string, e?: MouseEvent) {
 		const newTab = !!(e && (e.metaKey || e.ctrlKey));
-		ui.openPaper(id, { replace: !newTab });
+		ui.openPaper(id, { newTab });
 		goto(`/paper/${id}`);
 	}
 </script>

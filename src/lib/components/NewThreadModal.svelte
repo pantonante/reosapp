@@ -29,7 +29,7 @@
 		await threads.add(t);
 		reset();
 		ui.newThreadOpen = false;
-		ui.openThread(t.id);
+		ui.openThread(t.id, { newTab: true });
 		goto(`/threads/${t.id}`);
 	}
 </script>
