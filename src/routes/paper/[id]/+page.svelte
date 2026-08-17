@@ -11,7 +11,7 @@
 	import { revealInFinder, openExternal } from '$lib/tauri/shell';
 	import { readNotes, writeNotes } from '$lib/tauri/fs';
 	import { ask } from '@tauri-apps/plugin-dialog';
-	import { ExternalLink, FolderOpen, Star, FileText, Globe, Sparkles, MessageSquare, PanelRight, Inbox, Check, ArrowRightLeft, Github, Trash2, RotateCw } from 'lucide-svelte';
+	import { ExternalLink, FolderOpen, Copy, Star, FileText, Globe, Sparkles, MessageSquare, PanelRight, Inbox, Check, ArrowRightLeft, Github, Trash2, RotateCw } from 'lucide-svelte';
 	import type { ReadingStatus } from '$lib/types';
 
 	const id = $derived(page.params.id!);
@@ -36,6 +36,8 @@
 	let movingThread = $state(false);
 	let movePickerOpen = $state(false);
 	let moveQuery = $state('');
+	let pathCopyState = $state<'idle' | 'copied' | 'failed'>('idle');
+	let pathCopyReset: ReturnType<typeof setTimeout> | undefined;
 
 	const currentThreadId = $derived(paper?.threadId ?? 'inbox');
 	const currentThreadLabel = $derived(
@@ -93,6 +95,18 @@
 	async function saveNotes() {
 		if (!paper) return;
 		await writeNotes(paper.threadId ?? 'inbox', paper.arxivId, notes);
+	}
+
+	async function copyPaperPath() {
+		if (!paper?.pdfPath) return;
+		try {
+			await navigator.clipboard.writeText(paper.pdfPath);
+			pathCopyState = 'copied';
+		} catch {
+			pathCopyState = 'failed';
+		}
+		if (pathCopyReset) clearTimeout(pathCopyReset);
+		pathCopyReset = setTimeout(() => (pathCopyState = 'idle'), 1800);
 	}
 
 	async function setStatus(status: ReadingStatus) {
@@ -536,6 +550,20 @@
 										</Button>
 									{/if}
 									{#if paper.pdfPath}
+										<Button
+											size="sm"
+											variant="outline"
+											onclick={copyPaperPath}
+											title={pathCopyState === 'failed' ? 'Could not copy the path' : paper.pdfPath}
+										>
+											{#if pathCopyState === 'copied'}
+												<Check class="h-3.5 w-3.5" />
+												Copied
+											{:else}
+												<Copy class="h-3.5 w-3.5" />
+												{pathCopyState === 'failed' ? 'Copy failed' : 'Copy path'}
+											{/if}
+										</Button>
 										<Button
 											size="sm"
 											variant="outline"

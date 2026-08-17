@@ -8,6 +8,11 @@
 		pdfDoc: any;
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		pdfjsLib: any;
+		// PDF.js' viewer-level builders own the selection boundary helpers for
+		// each text layer. Keep them with the cached DOM so selection still works
+		// after switching away from and back to a paper tab.
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		textLayerBuilders: any[];
 		fragment: DocumentFragment;
 		path: string;
 		scale: number;
@@ -33,6 +38,10 @@
 	let pdfDoc: any = null;
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let pdfjsLib: any = null;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let TextLayerBuilderCtor: any = null;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let textLayerBuilders: any[] = [];
 	let totalPages = $state(0);
 	let currentPage = $state(1);
 	let scale = $state(1.2);
@@ -95,6 +104,7 @@
 		if (!canvasContainer || !scrollContainer) return false;
 		pdfDoc = cached.pdfDoc;
 		pdfjsLib = cached.pdfjsLib;
+		textLayerBuilders = cached.textLayerBuilders;
 		totalPages = cached.totalPages;
 		scale = cached.scale;
 		currentPage = cached.currentPage;
@@ -134,6 +144,10 @@
 				const workerSrc = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
 				pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc.default;
 			}
+			if (!TextLayerBuilderCtor) {
+				const pdfjsViewer = await import('pdfjs-dist/web/pdf_viewer.mjs');
+				TextLayerBuilderCtor = pdfjsViewer.TextLayerBuilder;
+			}
 
 			const bytes = await readFile(path);
 			pdfDoc = await pdfjsLib.getDocument({ data: bytes }).promise;
@@ -142,6 +156,8 @@
 			// New document — drop any stale wrappers from a previous PDF so the
 			// in-place re-render path in renderAll() doesn't try to reuse them.
 			if (canvasContainer) canvasContainer.innerHTML = '';
+			for (const builder of textLayerBuilders) builder?.cancel?.();
+			textLayerBuilders = [];
 			pageObserver?.disconnect();
 			pageObserver = null;
 			await fitToWidth();
@@ -224,11 +240,27 @@
 			let wrapper: HTMLDivElement;
 			let canvas: HTMLCanvasElement;
 			let textLayerDiv: HTMLDivElement;
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			let textLayerBuilder: any;
 			if (inPlace) {
 				wrapper = existing[i - 1];
 				canvas = wrapper.querySelector('canvas')!;
-				textLayerDiv = wrapper.querySelector<HTMLDivElement>('.textLayer')!;
-				textLayerDiv.replaceChildren();
+				textLayerBuilder = textLayerBuilders[i - 1];
+				if (textLayerBuilder?.div?.parentNode === wrapper) {
+					textLayerDiv = textLayerBuilder.div;
+				} else {
+					// Handles a layer rendered before the builder-backed selection fix
+					// (notably during hot reload) without leaving stale overlay nodes.
+					wrapper.querySelector('.textLayer')?.remove();
+					if (!TextLayerBuilderCtor) {
+						const pdfjsViewer = await import('pdfjs-dist/web/pdf_viewer.mjs');
+						TextLayerBuilderCtor = pdfjsViewer.TextLayerBuilder;
+					}
+					textLayerBuilder = new TextLayerBuilderCtor({ pdfPage: page });
+					textLayerBuilders[i - 1] = textLayerBuilder;
+					textLayerDiv = textLayerBuilder.div;
+					wrapper.appendChild(textLayerDiv);
+				}
 			} else {
 				wrapper = document.createElement('div');
 				wrapper.dataset.pageNumber = String(i);
@@ -236,12 +268,17 @@
 				canvas = document.createElement('canvas');
 				canvas.className = 'block rounded shadow-lg';
 				wrapper.appendChild(canvas);
-				textLayerDiv = document.createElement('div');
-				textLayerDiv.className = 'textLayer';
+				textLayerBuilder = new TextLayerBuilderCtor({ pdfPage: page });
+				textLayerBuilders[i - 1] = textLayerBuilder;
+				textLayerDiv = textLayerBuilder.div;
 				wrapper.appendChild(textLayerDiv);
 				canvasContainer.appendChild(wrapper);
 				pageObserver!.observe(wrapper);
 			}
+			// TextLayerBuilder expresses font sizes and marked-content positions
+			// relative to this PDF.js variable. Keeping it on the page wrapper also
+			// makes the overlay track the canvas exactly after zooming.
+			wrapper.style.setProperty('--scale-factor', String(viewport.scale));
 
 			// HiDPI/Retina: render to a backing-store-sized canvas so the
 			// rasterized PDF matches the screen's physical pixels, then let CSS
@@ -263,19 +300,12 @@
 				await page.render({ canvasContext: ctx, viewport, transform }).promise;
 			}
 
-			// Selectable text overlay. PDF.js positions transparent spans on top
-			// of the canvas so text selection / copy-paste works against the
-			// rasterized page.
-			textLayerDiv.style.width = `${cssWidth}px`;
-			textLayerDiv.style.height = `${cssHeight}px`;
-			const textContent = await page.getTextContent();
+			// Use PDF.js' viewer builder rather than the low-level TextLayer alone.
+			// Besides positioning spans, the builder manages an end-of-content
+			// sentinel while dragging. That keeps selection bounded to the active
+			// line/paragraph instead of jumping across absolutely-positioned spans.
+			await textLayerBuilder.render(viewport);
 			if (token !== renderToken) return;
-			const textLayer = new pdfjsLib.TextLayer({
-				textContentSource: textContent,
-				container: textLayerDiv,
-				viewport
-			});
-			await textLayer.render();
 
 			// Keep the anchor pinned: any size change above it shifts its
 			// offsetTop, so add the delta to scrollTop to compensate.
@@ -360,6 +390,7 @@
 			pdfCache.set(paperId, {
 				pdfDoc,
 				pdfjsLib,
+				textLayerBuilders,
 				fragment,
 				path,
 				scale,
@@ -368,6 +399,7 @@
 				currentPage
 			});
 		} else {
+			for (const builder of textLayerBuilders) builder?.cancel?.();
 			pdfDoc?.destroy?.();
 		}
 	});
@@ -453,7 +485,42 @@
 		transform-origin: 0% 0%;
 	}
 
+	:global(.textLayer > :not(.markedContent)),
+	:global(.textLayer .markedContent span:not(.markedContent)) {
+		z-index: 1;
+	}
+
+	:global(.textLayer span.markedContent) {
+		top: 0;
+		height: 0;
+	}
+
+	:global(.textLayer span[role='img']) {
+		user-select: none;
+		cursor: default;
+	}
+
 	:global(.textLayer ::selection) {
 		background: rgba(0, 100, 250, 0.3);
+	}
+
+	:global(.textLayer br::selection) {
+		background: transparent;
+	}
+
+	/* TextLayerBuilder moves this full-page sentinel beside the active range
+	   during a drag, which gives WebKit a stable selection boundary at the end
+	   of short lines and paragraphs. */
+	:global(.textLayer .endOfContent) {
+		display: block;
+		position: absolute;
+		inset: 100% 0 0;
+		z-index: 0;
+		cursor: default;
+		user-select: none;
+	}
+
+	:global(.textLayer.selecting .endOfContent) {
+		top: 0;
 	}
 </style>
