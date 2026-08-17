@@ -315,7 +315,12 @@
 						<SourceViewer url={paper.sourceUrl!} paperId={paper.id} {reloadToken} />
 					{:else}
 						{#key paper.id}
-							<PdfViewer path={paper.pdfPath} paperId={paper.id} />
+							<PdfViewer
+								path={paper.pdfPath}
+								paperId={paper.id}
+								threadSlug={paper.threadId ?? 'inbox'}
+								arxivId={paper.arxivId}
+							/>
 						{/key}
 					{/if}
 				</div>

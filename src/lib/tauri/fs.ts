@@ -10,7 +10,7 @@ import {
 	writeTextFile
 } from '@tauri-apps/plugin-fs';
 import { join } from '@tauri-apps/api/path';
-import type { ChatMessage, ChatSummary, Paper, Thread } from '$lib/types';
+import type { ChatMessage, ChatSummary, Paper, PaperHighlight, Thread } from '$lib/types';
 import { loadConfig } from './config';
 
 const INBOX_SLUG = 'inbox';
@@ -178,6 +178,53 @@ export async function writeNotes(
 	const dir = await paperDir(threadSlug, arxivId);
 	if (!(await exists(dir))) await mkdir(dir, { recursive: true });
 	await writeTextFile(await join(dir, 'notes.md'), content);
+}
+
+export async function readPaperHighlights(
+	threadSlug: string,
+	arxivId: string
+): Promise<PaperHighlight[]> {
+	const path = await join(await paperDir(threadSlug, arxivId), 'highlights.json');
+	if (!(await exists(path))) return [];
+	const parsed: unknown = JSON.parse(await readTextFile(path));
+	if (!Array.isArray(parsed)) return [];
+	return parsed.filter((item): item is PaperHighlight => {
+		if (!item || typeof item !== 'object') return false;
+		const h = item as Partial<PaperHighlight>;
+		return (
+			typeof h.id === 'string' &&
+			typeof h.text === 'string' &&
+			typeof h.createdAt === 'string' &&
+			Array.isArray(h.areas) &&
+			h.areas.every(
+				(area) => {
+					if (!area || typeof area !== 'object') return false;
+					const values = [area.x, area.y, area.width, area.height];
+					return (
+						Number.isInteger(area.page) &&
+						area.page > 0 &&
+						values.every(Number.isFinite) &&
+						area.x >= 0 &&
+						area.y >= 0 &&
+						area.width > 0 &&
+						area.height > 0 &&
+						area.x + area.width <= 1.01 &&
+						area.y + area.height <= 1.01
+					);
+				}
+			)
+		);
+	});
+}
+
+export async function writePaperHighlights(
+	threadSlug: string,
+	arxivId: string,
+	highlights: PaperHighlight[]
+): Promise<void> {
+	const dir = await paperDir(threadSlug, arxivId);
+	if (!(await exists(dir))) await mkdir(dir, { recursive: true });
+	await writeTextFile(await join(dir, 'highlights.json'), JSON.stringify(highlights, null, 2));
 }
 
 export async function paperSummaryPath(threadSlug: string, arxivId: string): Promise<string> {

@@ -51,6 +51,23 @@ export interface Note {
 	createdAt: string;
 }
 
+/** A page-relative rectangle used to redraw a PDF highlight at any zoom level. */
+export interface PaperHighlightArea {
+	page: number;
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
+
+/** A single text selection, which may span multiple lines or PDF pages. */
+export interface PaperHighlight {
+	id: string;
+	text: string;
+	createdAt: string;
+	areas: PaperHighlightArea[];
+}
+
 /**
  * Chat messages live as JSONL on disk, not in the SQLite cache.
  *

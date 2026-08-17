@@ -27,10 +27,18 @@
 	import { onMount, onDestroy, tick } from 'svelte';
 	import { readFile } from '@tauri-apps/plugin-fs';
 	import { Button } from '$lib/components/ui';
-	import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2, Minimize2 } from 'lucide-svelte';
+	import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2, Minimize2, Highlighter } from 'lucide-svelte';
 	import { ui } from '$lib/stores.svelte';
+	import { readPaperHighlights, writePaperHighlights } from '$lib/tauri/fs';
+	import { openExternal } from '$lib/tauri/shell';
+	import type { PaperHighlight, PaperHighlightArea } from '$lib/types';
 
-	let { path, paperId }: { path: string; paperId?: string } = $props();
+	let {
+		path,
+		paperId,
+		threadSlug,
+		arxivId
+	}: { path: string; paperId?: string; threadSlug: string; arxivId: string } = $props();
 
 	let scrollContainer = $state<HTMLDivElement | undefined>();
 	let canvasContainer = $state<HTMLDivElement | undefined>();
@@ -48,9 +56,15 @@
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let restored = $state(false);
+	let highlights = $state<PaperHighlight[]>([]);
+	let highlightsLoadedFor = $state<string | null>(null);
+	let highlightSelectionActive = $state(false);
+	let highlightSaveFailed = $state(false);
 
 	let pageObserver: IntersectionObserver | null = null;
 	let renderToken = 0;
+	let highlightLoadToken = 0;
+	let highlightWriteQueue = Promise.resolve();
 
 	function posKey(id: string) {
 		return `reos:pdfPos:${id}`;
@@ -72,6 +86,316 @@
 			// quota or storage unavailable — ignore
 		}
 	}
+
+	function renderHighlightLayers() {
+		if (!canvasContainer) return;
+		for (const wrapper of canvasContainer.querySelectorAll<HTMLElement>('[data-page-number]')) {
+			const page = Number(wrapper.dataset.pageNumber);
+			let layer = wrapper.querySelector<HTMLDivElement>('.paperHighlightLayer');
+			if (!layer) {
+				layer = document.createElement('div');
+				layer.className = 'paperHighlightLayer';
+				layer.setAttribute('aria-hidden', 'true');
+				wrapper.appendChild(layer);
+			}
+			layer.replaceChildren();
+			for (const highlight of highlights) {
+				for (const area of highlight.areas) {
+					if (area.page !== page) continue;
+					const mark = document.createElement('div');
+					mark.className = 'paperHighlight';
+					mark.dataset.highlightId = highlight.id;
+					mark.style.left = `${area.x * 100}%`;
+					mark.style.top = `${area.y * 100}%`;
+					mark.style.width = `${area.width * 100}%`;
+					mark.style.height = `${area.height * 100}%`;
+					layer.appendChild(mark);
+				}
+			}
+		}
+	}
+
+	async function goToPdfDestination(destination: string | unknown[]) {
+		if (!pdfDoc || !canvasContainer || !scrollContainer) return;
+		try {
+			const explicitDestination =
+				typeof destination === 'string' ? await pdfDoc.getDestination(destination) : destination;
+			if (!Array.isArray(explicitDestination) || explicitDestination.length === 0) return;
+
+			const pageRef = explicitDestination[0];
+			const pageIndex =
+				typeof pageRef === 'number' ? pageRef : await pdfDoc.getPageIndex(pageRef);
+			const pageNumber = pageIndex + 1;
+			const wrapper = canvasContainer.querySelector<HTMLElement>(
+				`[data-page-number="${pageNumber}"]`
+			);
+			if (!wrapper) return;
+
+			let pageOffset = 0;
+			const destinationKind = explicitDestination[1] as { name?: string } | undefined;
+			const pdfTop =
+				destinationKind?.name === 'XYZ'
+					? explicitDestination[3]
+					: destinationKind?.name === 'FitH' || destinationKind?.name === 'FitBH'
+						? explicitDestination[2]
+						: null;
+			if (typeof pdfTop === 'number') {
+				const targetPage = await pdfDoc.getPage(pageNumber);
+				const targetViewport = targetPage.getViewport({ scale });
+				pageOffset = targetViewport.convertToViewportPoint(0, pdfTop)[1];
+			}
+
+			scrollContainer.scrollTo({
+				top: Math.max(0, wrapper.offsetTop + pageOffset - 12),
+				behavior: 'smooth'
+			});
+			wrapper.classList.remove('pdfLinkTarget');
+			// Restart the subtle arrival pulse even when repeatedly following links
+			// to the same page.
+			void wrapper.offsetWidth;
+			wrapper.classList.add('pdfLinkTarget');
+			setTimeout(() => wrapper.classList.remove('pdfLinkTarget'), 900);
+		} catch {
+			// A malformed destination should not break the rest of the PDF viewer.
+		}
+	}
+
+	function followNamedPdfAction(action: string): boolean {
+		switch (action) {
+			case 'FirstPage':
+				scrollToPage(1);
+				return true;
+			case 'LastPage':
+				scrollToPage(totalPages);
+				return true;
+			case 'NextPage':
+				nextPage();
+				return true;
+			case 'PrevPage':
+				prevPage();
+				return true;
+			default:
+				return false;
+		}
+	}
+
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	async function renderLinkLayer(page: any, viewport: any, wrapper: HTMLElement, token: number) {
+		let layer = wrapper.querySelector<HTMLDivElement>('.pdfLinkLayer');
+		if (!layer) {
+			layer = document.createElement('div');
+			layer.className = 'pdfLinkLayer';
+			wrapper.appendChild(layer);
+		}
+		layer.replaceChildren();
+
+		const annotations = await page.getAnnotations({ intent: 'display' });
+		if (token !== renderToken || !wrapper.isConnected) return;
+		for (const annotation of annotations) {
+			if (annotation.subtype !== 'Link' || !Array.isArray(annotation.rect)) continue;
+			const [x1, y1, x2, y2] = viewport.convertToViewportRectangle(annotation.rect);
+			const left = Math.max(0, Math.min(x1, x2));
+			const top = Math.max(0, Math.min(y1, y2));
+			const right = Math.min(viewport.width, Math.max(x1, x2));
+			const bottom = Math.min(viewport.height, Math.max(y1, y2));
+			if (right - left < 1 || bottom - top < 1) continue;
+
+			const link = document.createElement('button');
+			link.type = 'button';
+			link.className = 'pdfLinkAnnotation';
+			link.style.left = `${(left / viewport.width) * 100}%`;
+			link.style.top = `${(top / viewport.height) * 100}%`;
+			link.style.width = `${((right - left) / viewport.width) * 100}%`;
+			link.style.height = `${((bottom - top) / viewport.height) * 100}%`;
+
+			const externalUrl = typeof annotation.url === 'string' ? annotation.url : null;
+			const destination = annotation.dest as string | unknown[] | undefined;
+			const action = typeof annotation.action === 'string' ? annotation.action : null;
+			if (!externalUrl && !destination && !action) continue;
+			link.title = externalUrl ?? (destination ? 'Go to reference' : action ?? 'Open link');
+			link.setAttribute('aria-label', link.title);
+			link.addEventListener('click', (event) => {
+				event.preventDefault();
+				if (event.altKey) return;
+				if (externalUrl) {
+					void openExternal(externalUrl);
+				} else if (destination) {
+					void goToPdfDestination(destination);
+				} else if (action) {
+					followNamedPdfAction(action);
+				}
+			});
+			layer.appendChild(link);
+		}
+	}
+
+	async function rebuildLinkLayers() {
+		if (!pdfDoc || !canvasContainer) return;
+		const token = renderToken;
+		canvasContainer
+			.querySelectorAll('.pdfLinkLayer')
+			.forEach((layer) => layer.remove());
+		for (let pageNumber = 1; pageNumber <= totalPages; pageNumber++) {
+			if (token !== renderToken) return;
+			const wrapper = canvasContainer.querySelector<HTMLElement>(
+				`[data-page-number="${pageNumber}"]`
+			);
+			if (!wrapper) continue;
+			const page = await pdfDoc.getPage(pageNumber);
+			const viewport = page.getViewport({ scale });
+			await renderLinkLayer(page, viewport, wrapper, token);
+		}
+	}
+
+	function queueHighlightWrite(next: PaperHighlight[]) {
+		const snapshot = next.map((highlight) => ({
+			...highlight,
+			areas: highlight.areas.map((area) => ({ ...area }))
+		}));
+		highlightWriteQueue = highlightWriteQueue
+			.catch(() => undefined)
+			.then(() => writePaperHighlights(threadSlug, arxivId, snapshot))
+			.then(() => {
+				highlightSaveFailed = false;
+			})
+			.catch(() => {
+				highlightSaveFailed = true;
+			});
+	}
+
+	function roundArea(area: PaperHighlightArea): PaperHighlightArea {
+		return {
+			page: area.page,
+			x: Number(area.x.toFixed(6)),
+			y: Number(area.y.toFixed(6)),
+			width: Number(area.width.toFixed(6)),
+			height: Number(area.height.toFixed(6))
+		};
+	}
+
+	function mergeHighlightAreas(areas: PaperHighlightArea[]): PaperHighlightArea[] {
+		const sorted = [...areas].sort((a, b) => a.page - b.page || a.y - b.y || a.x - b.x);
+		const merged: PaperHighlightArea[] = [];
+		for (const area of sorted) {
+			const previous = merged.at(-1);
+			if (previous && previous.page === area.page) {
+				const previousMid = previous.y + previous.height / 2;
+				const areaMid = area.y + area.height / 2;
+				const sameLine = Math.abs(previousMid - areaMid) < Math.max(previous.height, area.height) * 0.55;
+				const gap = area.x - (previous.x + previous.width);
+				if (sameLine && gap < 0.015) {
+					const right = Math.max(previous.x + previous.width, area.x + area.width);
+					const bottom = Math.max(previous.y + previous.height, area.y + area.height);
+					previous.x = Math.min(previous.x, area.x);
+					previous.y = Math.min(previous.y, area.y);
+					previous.width = right - previous.x;
+					previous.height = bottom - previous.y;
+					continue;
+				}
+			}
+			merged.push({ ...area });
+		}
+		return merged.map(roundArea);
+	}
+
+	function selectionAreas(selection: Selection): PaperHighlightArea[] {
+		if (!canvasContainer) return [];
+		const rangeRects: DOMRect[] = [];
+		for (let i = 0; i < selection.rangeCount; i++) {
+			rangeRects.push(...Array.from(selection.getRangeAt(i).getClientRects()));
+		}
+		const areas: PaperHighlightArea[] = [];
+		for (const wrapper of canvasContainer.querySelectorAll<HTMLElement>('[data-page-number]')) {
+			const page = Number(wrapper.dataset.pageNumber);
+			const pageRect = wrapper.getBoundingClientRect();
+			if (!page || pageRect.width <= 0 || pageRect.height <= 0) continue;
+			for (const rect of rangeRects) {
+				const left = Math.max(rect.left, pageRect.left);
+				const top = Math.max(rect.top, pageRect.top);
+				const right = Math.min(rect.right, pageRect.right);
+				const bottom = Math.min(rect.bottom, pageRect.bottom);
+				const width = right - left;
+				const height = bottom - top;
+				if (width < 1.5 || height < 2) continue;
+				// Ignore the builder's temporary full-page selection sentinel.
+				if (width > pageRect.width * 0.98 && height > pageRect.height * 0.1) continue;
+				areas.push({
+					page,
+					x: (left - pageRect.left) / pageRect.width,
+					y: (top - pageRect.top) / pageRect.height,
+					width: width / pageRect.width,
+					height: height / pageRect.height
+				});
+			}
+		}
+		return mergeHighlightAreas(areas);
+	}
+
+	function highlightAtPoint(wrapper: HTMLElement, clientX: number, clientY: number): string | null {
+		const page = Number(wrapper.dataset.pageNumber);
+		const rect = wrapper.getBoundingClientRect();
+		if (!page || rect.width <= 0 || rect.height <= 0) return null;
+		const x = (clientX - rect.left) / rect.width;
+		const y = (clientY - rect.top) / rect.height;
+		for (let i = highlights.length - 1; i >= 0; i--) {
+			const highlight = highlights[i];
+			if (
+				highlight.areas.some(
+					(area) =>
+						area.page === page &&
+						x >= area.x &&
+						x <= area.x + area.width &&
+						y >= area.y &&
+						y <= area.y + area.height
+				)
+			) {
+				return highlight.id;
+			}
+		}
+		return null;
+	}
+
+	function handleHighlightPointerDown(event: PointerEvent) {
+		if (!event.altKey || event.button !== 0) return;
+		if (highlightsLoadedFor !== `${threadSlug}/${arxivId}`) return;
+		const target = event.target;
+		if (!(target instanceof Element)) return;
+		const wrapper = target.closest<HTMLElement>('[data-page-number]');
+		if (!wrapper || !canvasContainer?.contains(wrapper)) return;
+
+		const existingId = highlightAtPoint(wrapper, event.clientX, event.clientY);
+		if (existingId) {
+			event.preventDefault();
+			event.stopPropagation();
+			highlightSelectionActive = false;
+			highlights = highlights.filter((highlight) => highlight.id !== existingId);
+			renderHighlightLayers();
+			queueHighlightWrite(highlights);
+			window.getSelection()?.removeAllRanges();
+			return;
+		}
+
+		highlightSelectionActive = true;
+	}
+
+	function captureHighlightSelection() {
+		const selection = window.getSelection();
+		if (!selection || selection.isCollapsed) return;
+		const text = selection.toString().replaceAll('\u0000', '').trim();
+		const areas = selectionAreas(selection);
+		if (!text || areas.length === 0) return;
+		const highlight: PaperHighlight = {
+			id: crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+			text,
+			createdAt: new Date().toISOString(),
+			areas
+		};
+		highlights = [...highlights, highlight];
+		renderHighlightLayers();
+		queueHighlightWrite(highlights);
+		selection.removeAllRanges();
+	}
+
 	function scrollToPageInstant(n: number) {
 		if (!scrollContainer || !canvasContainer) return;
 		const el = canvasContainer.querySelector<HTMLElement>(`[data-page-number="${n}"]`);
@@ -121,6 +445,8 @@
 		loading = false;
 		await tick();
 		scrollContainer.scrollTop = cached.scrollTop;
+		renderHighlightLayers();
+		void rebuildLinkLayers();
 		return true;
 	}
 
@@ -306,6 +632,7 @@
 			// line/paragraph instead of jumping across absolutely-positioned spans.
 			await textLayerBuilder.render(viewport);
 			if (token !== renderToken) return;
+			void renderLinkLayer(page, viewport, wrapper, token);
 
 			// Keep the anchor pinned: any size change above it shifts its
 			// offsetTop, so add the delta to scrollTop to compensate.
@@ -314,6 +641,7 @@
 				if (delta !== 0) scrollContainer.scrollTop += delta;
 			}
 		}
+		renderHighlightLayers();
 	}
 
 	function scrollToPage(n: number) {
@@ -340,10 +668,29 @@
 	onMount(() => {
 		// loadPdf is triggered by the path-watching $effect below.
 		const onKey = (e: KeyboardEvent) => {
-			if (e.key === 'Escape' && ui.pdfFullscreen) ui.pdfFullscreen = false;
+			if (e.key === 'Escape') {
+				if (ui.pdfFullscreen) ui.pdfFullscreen = false;
+				highlightSelectionActive = false;
+			}
+		};
+		const onPointerUp = () => {
+			if (!highlightSelectionActive) return;
+			highlightSelectionActive = false;
+			// Let WebKit and PDF.js finish settling the selection range before
+			// reading its client rectangles.
+			requestAnimationFrame(captureHighlightSelection);
+		};
+		const onPointerCancel = () => {
+			highlightSelectionActive = false;
 		};
 		window.addEventListener('keydown', onKey);
-		return () => window.removeEventListener('keydown', onKey);
+		window.addEventListener('pointerup', onPointerUp);
+		window.addEventListener('pointercancel', onPointerCancel);
+		return () => {
+			window.removeEventListener('keydown', onKey);
+			window.removeEventListener('pointerup', onPointerUp);
+			window.removeEventListener('pointercancel', onPointerCancel);
+		};
 	});
 
 	let lastLoadedPath = $state<string | null>(null);
@@ -352,6 +699,27 @@
 			lastLoadedPath = path;
 			loadPdf();
 		}
+	});
+
+	$effect(() => {
+		const storageKey = `${threadSlug}/${arxivId}`;
+		if (storageKey === highlightsLoadedFor) return;
+		const token = ++highlightLoadToken;
+		void readPaperHighlights(threadSlug, arxivId)
+			.then(async (loaded) => {
+				if (token !== highlightLoadToken) return;
+				highlights = loaded;
+				highlightsLoadedFor = storageKey;
+				highlightSaveFailed = false;
+				await tick();
+				renderHighlightLayers();
+			})
+			.catch(() => {
+				if (token !== highlightLoadToken) return;
+				highlights = [];
+				highlightsLoadedFor = storageKey;
+				highlightSaveFailed = true;
+			});
 	});
 
 	$effect(() => {
@@ -381,6 +749,11 @@
 
 	onDestroy(() => {
 		pageObserver?.disconnect();
+		// Link callbacks belong to this component instance. Rebuild the lightweight
+		// annotation layers after a cached PDF DOM is attached to its next instance.
+		canvasContainer
+			?.querySelectorAll('.pdfLinkLayer')
+			.forEach((layer) => layer.remove());
 		// If we own a fully-loaded PDF for a known paper, stash it for the next
 		// mount instead of destroying. Switching paper tabs will reattach the
 		// rendered canvases without a re-read or re-rasterize.
@@ -406,7 +779,7 @@
 </script>
 
 <div class="flex h-full flex-col">
-	<div class="flex h-10 items-center justify-between border-b border-border/60 px-3">
+	<div class="relative flex h-10 items-center justify-between border-b border-border/60 px-3">
 		<div class="flex items-center gap-1">
 			<Button variant="ghost" size="icon" onclick={prevPage} disabled={currentPage <= 1}>
 				<ChevronLeft class="h-4 w-4" />
@@ -422,6 +795,21 @@
 			>
 				<ChevronRight class="h-4 w-4" />
 			</Button>
+		</div>
+		<div
+			class="absolute left-1/2 hidden -translate-x-1/2 items-center gap-1.5 text-[10px] text-muted-foreground md:flex"
+			class:text-destructive={highlightSaveFailed}
+			title={highlightSaveFailed
+				? 'Highlights could not be saved'
+				: 'Option/Alt-drag to highlight · Option/Alt-click a highlight to remove it'}
+		>
+			<Highlighter class="h-3 w-3" />
+			<span><kbd class="font-mono text-foreground/70">⌥/Alt</kbd> drag to highlight</span>
+			{#if highlights.length > 0}
+				<span class="rounded-full bg-amber-400/15 px-1.5 font-mono text-amber-500">
+					{highlights.length}
+				</span>
+			{/if}
 		</div>
 		<div class="flex items-center gap-1">
 			<Button variant="ghost" size="icon" onclick={zoomOut}>
@@ -456,7 +844,14 @@
 				{error}
 			</div>
 		{/if}
-		<div bind:this={canvasContainer} class="space-y-4" class:hidden={loading || !!error}></div>
+		<div
+			bind:this={canvasContainer}
+			class="space-y-4"
+			class:hidden={loading || !!error}
+			class:pdf-highlight-mode={highlightSelectionActive}
+			onpointerdown={handleHighlightPointerDown}
+			role="presentation"
+		></div>
 	</div>
 </div>
 
@@ -522,5 +917,73 @@
 
 	:global(.textLayer.selecting .endOfContent) {
 		top: 0;
+	}
+
+	:global(.paperHighlightLayer) {
+		position: absolute;
+		inset: 0;
+		overflow: hidden;
+		pointer-events: none;
+		z-index: 1;
+	}
+
+	:global(.paperHighlight) {
+		position: absolute;
+		border-radius: 2px;
+		background: rgba(250, 204, 21, 0.42);
+		box-shadow: inset 0 0 0 1px rgba(202, 138, 4, 0.08);
+		mix-blend-mode: multiply;
+	}
+
+	:global(.pdfLinkLayer) {
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+		z-index: 3;
+	}
+
+	:global(.pdfLinkAnnotation) {
+		position: absolute;
+		margin: 0;
+		border: 0;
+		border-radius: 2px;
+		background: transparent;
+		padding: 0;
+		pointer-events: auto;
+		cursor: pointer;
+		transition:
+			background-color 120ms ease,
+			box-shadow 120ms ease;
+	}
+
+	:global(.pdfLinkAnnotation:hover) {
+		background: hsl(var(--accent) / 0.1);
+		box-shadow: inset 0 0 0 1px hsl(var(--accent) / 0.24);
+	}
+
+	:global(.pdfLinkAnnotation:focus-visible) {
+		outline: 2px solid hsl(var(--accent) / 0.8);
+		outline-offset: 1px;
+	}
+
+	:global(.pdfLinkTarget) {
+		animation: pdf-link-arrival 900ms ease-out;
+	}
+
+	@keyframes pdf-link-arrival {
+		0% {
+			box-shadow: 0 0 0 3px hsl(var(--accent) / 0.5);
+		}
+		100% {
+			box-shadow: 0 0 0 10px hsl(var(--accent) / 0);
+		}
+	}
+
+	:global(.pdf-highlight-mode .textLayer :is(span, br)) {
+		cursor: crosshair;
+	}
+
+	:global(.pdf-highlight-mode .textLayer ::selection) {
+		background: rgba(250, 204, 21, 0.45);
 	}
 </style>
