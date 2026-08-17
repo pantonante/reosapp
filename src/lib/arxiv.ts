@@ -3,6 +3,40 @@ import type { Paper } from './types';
 
 const UA = 'ReOS-Desktop/1.0 (research paper manager)';
 
+/**
+ * AlphaXiv mirrors arXiv paths, so its links can use the normal arXiv import
+ * pipeline after swapping only the origin. Accept both the live .org domain
+ * and the commonly-entered .com variant, with or without a scheme/www.
+ */
+export function canonicalizeArxivInput(raw: string): string {
+	const trimmed = raw.trim();
+	const candidate = /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+	try {
+		const url = new URL(candidate);
+		if (!/^(?:www\.)?alphaxiv\.(?:org|com)$/i.test(url.hostname)) return trimmed;
+		url.protocol = 'https:';
+		url.hostname = 'arxiv.org';
+		url.port = '';
+		return url.toString();
+	} catch {
+		return trimmed;
+	}
+}
+
+/** Mirror a canonical arXiv paper URL onto AlphaXiv without changing its path. */
+export function toAlphaxivUrl(arxivUrl: string): string {
+	try {
+		const url = new URL(arxivUrl);
+		if (!/^(?:www\.)?arxiv\.org$/i.test(url.hostname)) return arxivUrl;
+		url.protocol = 'https:';
+		url.hostname = 'www.alphaxiv.org';
+		url.port = '';
+		return url.toString();
+	} catch {
+		return arxivUrl;
+	}
+}
+
 export function extractArxivId(raw: string): string | null {
 	const match = raw.trim().match(/(\d{4}\.\d{4,5})(v\d+)?/);
 	return match ? match[1] : null;

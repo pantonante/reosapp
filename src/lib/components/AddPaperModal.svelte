@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Button, Dialog, Input } from '$lib/components/ui';
-	import { extractArxivId, fetchArxivPaper, downloadArxivPdf } from '$lib/arxiv';
+	import { canonicalizeArxivInput, extractArxivId, fetchArxivPaper, downloadArxivPdf } from '$lib/arxiv';
 	import { prepareWebSource } from '$lib/web';
 	import { writePaperPdf, removePaperFolder } from '$lib/tauri/fs';
 	import { extractPdfMetadata, extractWebpageMetadata } from '$lib/tauri/extract';
@@ -77,15 +77,17 @@
 	async function importFromInput() {
 		const trimmed = raw.trim();
 		if (!trimmed) return;
+		const canonicalInput = canonicalizeArxivInput(trimmed);
+		if (canonicalInput !== trimmed) raw = canonicalInput;
 		// If the input is a non-arxiv URL, take the webpage path even when the
 		// Arxiv regex happens to match a number pattern inside the URL (e.g.
 		// `example.com/2024.0123/...`). Only short-circuit to Arxiv when the
 		// URL host is arxiv.org or the input isn't a URL at all.
-		const prepared = await prepareWebSource(trimmed);
+		const prepared = await prepareWebSource(canonicalInput);
 		const isArxivHost = prepared
 			? /(^|\.)arxiv\.org$/i.test(new URL(prepared.normalizedUrl).hostname)
 			: false;
-		const arxivId = extractArxivId(trimmed);
+		const arxivId = extractArxivId(canonicalInput);
 		if (arxivId && (isArxivHost || !prepared)) {
 			await importFromArxivId(arxivId);
 			return;
@@ -410,7 +412,7 @@
 				<div class="flex gap-2">
 					<Input
 						bind:value={raw}
-						placeholder="2604.07209, arxiv.org/abs/…, or https://…"
+						placeholder="2604.07209, arxiv.org/abs/…, alphaxiv.org/abs/…, or https://…"
 						class="font-mono text-xs"
 						onkeydown={(e: KeyboardEvent) => {
 							if (e.key === 'Enter') importFromInput();

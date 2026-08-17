@@ -9,6 +9,7 @@
 	import PaperChat from '$lib/components/PaperChat.svelte';
 	import PaperSummary from '$lib/components/PaperSummary.svelte';
 	import { revealInFinder, openExternal } from '$lib/tauri/shell';
+	import { toAlphaxivUrl } from '$lib/arxiv';
 	import { readNotes, writeNotes } from '$lib/tauri/fs';
 	import { ask } from '@tauri-apps/plugin-dialog';
 	import { ExternalLink, FolderOpen, Copy, Star, FileText, Globe, Sparkles, MessageSquare, PanelRight, Inbox, Check, ArrowRightLeft, Github, Trash2, RotateCw } from 'lucide-svelte';
@@ -542,6 +543,15 @@
 										>
 											<ExternalLink class="h-3.5 w-3.5" />
 											Arxiv
+										</Button>
+										<Button
+											size="sm"
+											variant="outline"
+											onclick={() => openExternal(toAlphaxivUrl(paper.arxivUrl))}
+											title="Open this paper on AlphaXiv"
+										>
+											<Globe class="h-3.5 w-3.5" />
+											AlphaXiv
 										</Button>
 									{/if}
 									{#if paper.sourceUrl}
