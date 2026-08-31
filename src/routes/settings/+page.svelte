@@ -262,6 +262,54 @@
 	</Card>
 
 	<Card class="p-6">
+		<h2 class="text-sm font-semibold">MCP server</h2>
+		<p class="mt-1 text-xs text-muted-foreground">
+			Chat with your papers and threads from Claude Code or Claude Desktop. The server is
+			read-only: it reads the papers folder directly and never modifies your library. It ships
+			with the Re:OS repo under <code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">mcp/</code>.
+		</p>
+
+		<h3 class="mt-4 text-xs font-semibold">1. Build it once</h3>
+		<pre class="mt-1.5 select-text overflow-x-auto rounded-[8px] bg-muted p-3 font-mono text-[11px] leading-relaxed">cd &lt;reos-repo&gt;/mcp
+npm install
+npm run build</pre>
+
+		<h3 class="mt-4 text-xs font-semibold">2. Register it</h3>
+		<p class="mt-1 text-xs text-muted-foreground">Claude Code (available in every project):</p>
+		<pre class="mt-1.5 select-text overflow-x-auto rounded-[8px] bg-muted p-3 font-mono text-[11px] leading-relaxed">claude mcp add --scope user reos -- node &lt;reos-repo&gt;/mcp/dist/index.js</pre>
+		<p class="mt-2 text-xs text-muted-foreground">
+			Claude Desktop — add to
+			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">~/Library/Application Support/Claude/claude_desktop_config.json</code>:
+		</p>
+		<pre class="mt-1.5 select-text overflow-x-auto rounded-[8px] bg-muted p-3 font-mono text-[11px] leading-relaxed">{`{
+  "mcpServers": {
+    "reos": {
+      "command": "node",
+      "args": ["<reos-repo>/mcp/dist/index.js"]
+    }
+  }
+}`}</pre>
+
+		<h3 class="mt-4 text-xs font-semibold">3. Use it</h3>
+		<p class="mt-1 text-xs text-muted-foreground">
+			Just ask in natural language — "list my active research threads", "what does paper
+			2301.08243 say", "summarize the discussions in thread Mocap". Under the hood the agent
+			gets eight tools:
+			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">list_threads</code>,
+			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">get_thread</code>,
+			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">search_papers</code>,
+			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">get_paper</code>,
+			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">get_paper_content</code>,
+			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">list_chats</code>,
+			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">get_chat</code> and
+			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">get_vocabulary</code>.
+			It reads summaries and notes before falling back to PDFs, and it picks up the papers
+			folder configured above — no separate setup. After changing the folder here, new chats
+			see it immediately; rebuild is only needed when the server code itself changes.
+		</p>
+	</Card>
+
+	<Card class="p-6">
 		<h2 class="text-sm font-semibold">About</h2>
 		<div class="mt-3 flex items-baseline gap-2">
 			<span class="text-xs text-muted-foreground">Version</span>

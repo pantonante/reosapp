@@ -452,6 +452,11 @@ export const ui = (() => {
 		},
 		set addPaperOpen(v) {
 			addPaperOpen = v;
+			// Clear the target thread on every close — bits-ui only fires
+			// onOpenChange for user-initiated closes, so a successful import
+			// (which sets addPaperOpen = false directly) would otherwise leave
+			// the thread target sticky for the next "Add paper" from Inbox.
+			if (!v) addPaperTargetThreadId = null;
 		},
 		get bulkSummaryOpen() {
 			return bulkSummaryOpen;

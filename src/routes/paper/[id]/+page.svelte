@@ -35,10 +35,14 @@
 	let notesLoaded = $state(false);
 	let reloadToken = $state(0);
 	let movingThread = $state(false);
+	let deleting = $state(false);
 	let movePickerOpen = $state(false);
 	let moveQuery = $state('');
 	let pathCopyState = $state<'idle' | 'copied' | 'failed'>('idle');
 	let pathCopyReset: ReturnType<typeof setTimeout> | undefined;
+
+	let refCopyState = $state<'idle' | 'copied' | 'failed'>('idle');
+	let refCopyReset: ReturnType<typeof setTimeout> | undefined;
 
 	const currentThreadId = $derived(paper?.threadId ?? 'inbox');
 	const currentThreadLabel = $derived(
@@ -108,6 +112,20 @@
 		}
 		if (pathCopyReset) clearTimeout(pathCopyReset);
 		pathCopyReset = setTimeout(() => (pathCopyState = 'idle'), 1800);
+	}
+
+	// Copies an unambiguous paper reference (id + title) for pasting into an
+	// MCP-connected Claude session, e.g.: read 2303.04137 ("Diffusion Policy…")
+	async function copyPaperRef() {
+		if (!paper) return;
+		try {
+			await navigator.clipboard.writeText(`${paper.arxivId} ("${paper.title}")`);
+			refCopyState = 'copied';
+		} catch {
+			refCopyState = 'failed';
+		}
+		if (refCopyReset) clearTimeout(refCopyReset);
+		refCopyReset = setTimeout(() => (refCopyState = 'idle'), 1800);
 	}
 
 	async function setStatus(status: ReadingStatus) {
@@ -215,6 +233,27 @@
 	function openMovePicker() {
 		moveQuery = '';
 		movePickerOpen = true;
+	}
+
+	async function deletePaper() {
+		if (!paper || deleting) return;
+		const ok = await ask(
+			`Permanently delete "${paper.title}"?\n\nThis will:\n• Remove the paper from your library and from any threads it belongs to\n• Delete the PDF file and the paper's folder from disk\n• Delete all notes, annotations, and chats attached to this paper\n• Delete its cached summary\n\nThis cannot be undone.`,
+			{ title: 'Delete paper', kind: 'warning', okLabel: 'Delete', cancelLabel: 'Cancel' }
+		);
+		if (!ok) return;
+		deleting = true;
+		try {
+			// papers.remove drops the paper from the store and closes its tab
+			// synchronously before touching disk/DB, so we can leave this page
+			// right away and let the cleanup finish in the background.
+			const removal = papers.remove(paper.id);
+			const next = ui.activePaperId;
+			goto(next ? `/paper/${next}` : '/');
+			await removal;
+		} finally {
+			deleting = false;
+		}
 	}
 
 	async function moveToThread(toId: string) {
@@ -354,7 +393,22 @@
 						{#if panel === 'info'}
 							<div class="space-y-4 p-4">
 								<div>
-									<h2 class="text-sm font-semibold leading-snug">{paper.title}</h2>
+									<div class="flex items-start justify-between gap-2">
+										<h2 class="text-sm font-semibold leading-snug">{paper.title}</h2>
+										<button
+											class="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+											onclick={copyPaperRef}
+											title={refCopyState === 'failed'
+												? 'Could not copy the reference'
+												: `Copy reference: ${paper.arxivId} ("${paper.title}")`}
+										>
+											{#if refCopyState === 'copied'}
+												<Check class="h-3.5 w-3.5" />
+											{:else}
+												<Copy class="h-3.5 w-3.5" />
+											{/if}
+										</button>
+									</div>
 									<p class="mt-1 text-xs text-muted-foreground">
 										{paper.authors.join(', ')}
 									</p>
@@ -588,6 +642,22 @@
 											Reveal in Finder
 										</Button>
 									{/if}
+								</div>
+
+								<Separator />
+
+								<div>
+									<Button
+										size="sm"
+										variant="ghost"
+										class="text-destructive hover:bg-destructive/10 hover:text-destructive"
+										onclick={deletePaper}
+										disabled={deleting}
+										title="Permanently delete this paper, its PDF, notes, and chats"
+									>
+										<Trash2 class="h-3.5 w-3.5" />
+										{deleting ? 'Deleting…' : 'Delete paper'}
+									</Button>
 								</div>
 							</div>
 						{:else if panel === 'notes'}
