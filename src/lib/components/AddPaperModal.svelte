@@ -1,7 +1,15 @@
 <script lang="ts">
 	import { Button, Dialog, Input } from '$lib/components/ui';
 	import { canonicalizeArxivInput, extractArxivId, fetchArxivPaper, downloadArxivPdf } from '$lib/arxiv';
+	import {
+		extractBiorxivRef,
+		biorxivPaperId,
+		fetchBiorxivPaper,
+		downloadBiorxivPdf,
+		type BiorxivRef
+	} from '$lib/biorxiv';
 	import { prepareWebSource } from '$lib/web';
+	import type { Paper } from '$lib/types';
 	import { writePaperPdf, removePaperFolder } from '$lib/tauri/fs';
 	import { extractPdfMetadata, extractWebpageMetadata } from '$lib/tauri/extract';
 	import { papers, threads, ui } from '$lib/stores.svelte';
@@ -79,6 +87,13 @@
 		if (!trimmed) return;
 		const canonicalInput = canonicalizeArxivInput(trimmed);
 		if (canonicalInput !== trimmed) raw = canonicalInput;
+		// bioRxiv/medRxiv links (and bare dated DOIs) get the preprint pipeline,
+		// not the generic webpage one.
+		const biorxivRef = extractBiorxivRef(canonicalInput);
+		if (biorxivRef) {
+			await importFromBiorxiv(biorxivRef);
+			return;
+		}
 		// If the input is a non-arxiv URL, take the webpage path even when the
 		// Arxiv regex happens to match a number pattern inside the URL (e.g.
 		// `example.com/2024.0123/...`). Only short-circuit to Arxiv when the
@@ -99,8 +114,15 @@
 		error = 'Could not parse an Arxiv ID or URL from that input.';
 	}
 
-	async function importFromArxivId(arxivId: string) {
-		const existing = papers.items.find((p) => p.arxivId === arxivId);
+	// Shared tail of the arXiv/bioRxiv pipelines: fetch metadata, download the
+	// PDF, persist, and jump to the new paper. Returns to the existing paper
+	// when the ID is already in the library.
+	async function importRemotePaper(
+		dedupId: string,
+		fetchPaper: () => Promise<Paper>,
+		downloadPdf: (paper: Paper) => Promise<Uint8Array>
+	) {
+		const existing = papers.items.find((p) => p.arxivId === dedupId);
 		if (existing) {
 			ui.addPaperOpen = false;
 			goto(`/paper/${existing.id}`);
@@ -109,9 +131,9 @@
 		busy = true;
 		error = null;
 		try {
-			const paper = await fetchArxivPaper(arxivId);
-			const pdfBytes = await downloadArxivPdf(arxivId);
-			const pdfPath = await writePaperPdf(targetThreadId, arxivId, pdfBytes);
+			const paper = await fetchPaper();
+			const pdfBytes = await downloadPdf(paper);
+			const pdfPath = await writePaperPdf(targetThreadId, paper.arxivId, pdfBytes);
 			await papers.add({ ...paper, pdfPath, threadId: targetThreadId });
 			await attachToThread(paper.id);
 			ui.addPaperOpen = false;
@@ -121,6 +143,22 @@
 			error = e instanceof Error ? e.message : String(e);
 			busy = false;
 		}
+	}
+
+	async function importFromArxivId(arxivId: string) {
+		await importRemotePaper(
+			arxivId,
+			() => fetchArxivPaper(arxivId),
+			() => downloadArxivPdf(arxivId)
+		);
+	}
+
+	async function importFromBiorxiv(ref: BiorxivRef) {
+		await importRemotePaper(
+			biorxivPaperId(ref),
+			() => fetchBiorxivPaper(ref),
+			(paper) => downloadBiorxivPdf(paper.arxivUrl)
+		);
 	}
 
 	async function importFromWebpage(normalizedUrl: string, webId: string) {
@@ -277,7 +315,7 @@
 			? pendingSourceKind === 'web'
 				? 'Fetching the page and pulling out metadata…'
 				: 'Reading the PDF and pulling out metadata…'
-			: 'Paste an Arxiv link/ID, a webpage URL, or drop a PDF.'}
+			: 'Paste an Arxiv/bioRxiv link or ID, a webpage URL, or drop a PDF.'}
 	onOpenChange={(open) => {
 		if (!open) {
 			// Closing during review/extracting drops the temp paper folder.
@@ -407,12 +445,12 @@
 			<div class="space-y-2">
 				<div class="flex items-center gap-2 text-xs text-muted-foreground">
 					<Link2 class="h-3.5 w-3.5" />
-					Arxiv link/ID or webpage URL
+					Arxiv/bioRxiv link, ID, or webpage URL
 				</div>
 				<div class="flex gap-2">
 					<Input
 						bind:value={raw}
-						placeholder="2604.07209, arxiv.org/abs/…, alphaxiv.org/abs/…, or https://…"
+						placeholder="2604.07209, arxiv.org/abs/…, biorxiv.org/content/…, or https://…"
 						class="font-mono text-xs"
 						onkeydown={(e: KeyboardEvent) => {
 							if (e.key === 'Enter') importFromInput();

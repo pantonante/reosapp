@@ -18,6 +18,20 @@
 	const id = $derived(page.params.id!);
 	const paper = $derived(papers.get(id));
 	const isWebpage = $derived(!!paper?.sourceUrl && !paper?.pdfPath);
+	// arxivUrl doubles as the bioRxiv/medRxiv content URL for preprints from
+	// those servers; AlphaXiv mirroring only makes sense for actual arXiv links.
+	const isArxivSource = $derived(
+		!!paper?.arxivUrl && /^https?:\/\/(?:www\.)?arxiv\.org\//i.test(paper.arxivUrl)
+	);
+	const sourceSiteLabel = $derived(
+		!paper?.arxivUrl
+			? ''
+			: /biorxiv\.org\//i.test(paper.arxivUrl)
+				? 'bioRxiv'
+				: /medrxiv\.org\//i.test(paper.arxivUrl)
+					? 'medRxiv'
+					: 'Arxiv'
+	);
 
 	type SidePanel = 'info' | 'notes';
 
@@ -596,17 +610,19 @@
 											onclick={() => openExternal(paper.arxivUrl)}
 										>
 											<ExternalLink class="h-3.5 w-3.5" />
-											Arxiv
+											{sourceSiteLabel}
 										</Button>
-										<Button
-											size="sm"
-											variant="outline"
-											onclick={() => openExternal(toAlphaxivUrl(paper.arxivUrl))}
-											title="Open this paper on AlphaXiv"
-										>
-											<Globe class="h-3.5 w-3.5" />
-											AlphaXiv
-										</Button>
+										{#if isArxivSource}
+											<Button
+												size="sm"
+												variant="outline"
+												onclick={() => openExternal(toAlphaxivUrl(paper.arxivUrl))}
+												title="Open this paper on AlphaXiv"
+											>
+												<Globe class="h-3.5 w-3.5" />
+												AlphaXiv
+											</Button>
+										{/if}
 									{/if}
 									{#if paper.sourceUrl}
 										<Button

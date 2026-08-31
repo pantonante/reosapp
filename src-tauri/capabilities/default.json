@@ -25,7 +25,12 @@
       "identifier": "http:default",
       "allow": [
         { "url": "https://export.arxiv.org/*" },
-        { "url": "https://arxiv.org/*" }
+        { "url": "https://arxiv.org/*" },
+        { "url": "https://api.biorxiv.org/*" },
+        { "url": "https://www.biorxiv.org/*" },
+        { "url": "https://biorxiv.org/*" },
+        { "url": "https://www.medrxiv.org/*" },
+        { "url": "https://medrxiv.org/*" }
       ]
     },
     "sql:default",

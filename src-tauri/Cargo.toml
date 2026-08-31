@@ -17,7 +17,15 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 tauri-plugin-fs = "2"
-tauri-plugin-http = "2"
+# default-features off to drop rustls: bioRxiv's Cloudflare fingerprints the
+# rustls TLS handshake and answers 429; the OS-native TLS stack passes.
+tauri-plugin-http = { version = "2", default-features = false, features = [
+	"native-tls",
+	"http2",
+	"charset",
+	"macos-system-configuration",
+	"cookies",
+] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
