@@ -7,6 +7,8 @@ use std::path::PathBuf;
 #[serde(rename_all = "camelCase")]
 pub struct ReosConfig {
     pub papers_dir: Option<String>,
+    #[serde(default)]
+    pub server_enabled: bool,
 }
 
 fn config_dir() -> AppResult<PathBuf> {

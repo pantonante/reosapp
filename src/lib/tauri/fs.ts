@@ -3,6 +3,7 @@ import {
 	exists,
 	mkdir,
 	readDir,
+	readFile,
 	readTextFile,
 	remove,
 	rename,
@@ -238,6 +239,45 @@ export async function readPaperSummary(
 	const path = await paperSummaryPath(threadSlug, arxivId);
 	if (!(await exists(path))) return null;
 	return await readTextFile(path);
+}
+
+export async function writePaperSummary(
+	threadSlug: string,
+	arxivId: string,
+	content: string
+): Promise<void> {
+	const dir = await paperDir(threadSlug, arxivId);
+	if (!(await exists(dir))) await mkdir(dir, { recursive: true });
+	await writeTextFile(await join(dir, 'summary.md'), content);
+}
+
+export async function summaryAssetsDir(threadSlug: string, arxivId: string): Promise<string> {
+	return join(await paperDir(threadSlug, arxivId), 'summary-assets');
+}
+
+export async function writePaperSummaryAsset(
+	threadSlug: string,
+	arxivId: string,
+	fileName: string,
+	bytes: Uint8Array
+): Promise<void> {
+	if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(fileName)) {
+		throw new Error('Invalid summary asset filename');
+	}
+	const dir = await summaryAssetsDir(threadSlug, arxivId);
+	if (!(await exists(dir))) await mkdir(dir, { recursive: true });
+	await writeFile(await join(dir, fileName), bytes);
+}
+
+export async function readPaperSummaryAsset(
+	threadSlug: string,
+	arxivId: string,
+	fileName: string
+): Promise<Uint8Array> {
+	if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(fileName)) {
+		throw new Error('Invalid summary asset filename');
+	}
+	return readFile(await join(await summaryAssetsDir(threadSlug, arxivId), fileName));
 }
 
 export async function removePaperFolder(threadSlug: string, arxivId: string): Promise<void> {

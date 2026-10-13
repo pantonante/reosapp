@@ -91,6 +91,7 @@ export interface ChatSummary {
 
 export interface ReosConfig {
 	papersDir: string | null;
+	serverEnabled: boolean;
 }
 
 /**

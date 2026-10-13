@@ -287,7 +287,7 @@ export const summaryMeta = createSummaryMetaStore();
 // --- Config store ---
 
 function createConfigStore() {
-	let value = $state<ReosConfig>({ papersDir: null });
+	let value = $state<ReosConfig>({ papersDir: null, serverEnabled: false });
 	let loaded = $state(false);
 
 	return {

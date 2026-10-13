@@ -13,6 +13,7 @@
 	import NewThreadModal from '$lib/components/NewThreadModal.svelte';
 	import BulkSummaryModal from '$lib/components/BulkSummaryModal.svelte';
 	import FirstRunWizard from '$lib/components/FirstRunWizard.svelte';
+	import { syncRemoteOpenPapers } from '$lib/tauri/remote-server';
 
 	let { children } = $props();
 	let booting = $state(true);
@@ -40,6 +41,14 @@
 		else if (threadMatch) ui.activeTab = { kind: 'thread', id: threadMatch[1] };
 		else ui.activeTab = null;
 		if (!booting) ui.lastPath = path;
+	});
+
+	$effect(() => {
+		if (booting) return;
+		const ids = [...new Set(ui.openTabs.filter((tab) => tab.kind === 'paper' || tab.kind === 'paper-chat').map((tab) => tab.id))];
+		const active = ui.activeTab;
+		const activeId = active?.kind === 'paper' || active?.kind === 'paper-chat' ? active.id : null;
+		void syncRemoteOpenPapers(ids, activeId);
 	});
 </script>
 

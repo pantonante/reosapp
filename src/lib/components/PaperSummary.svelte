@@ -1,10 +1,17 @@
 <script lang="ts">
 	import 'katex/dist/katex.min.css';
+	import DOMPurify from 'dompurify';
 	import { Marked } from 'marked';
 	import markedKatex from 'marked-katex-extension';
 	import { Button } from '$lib/components/ui';
 	import type { Paper } from '$lib/types';
-	import { INBOX_SLUG, readPaperSummary } from '$lib/tauri/fs';
+	import {
+		INBOX_SLUG,
+		readPaperSummary,
+		readPaperSummaryAsset,
+		writePaperSummary,
+		writePaperSummaryAsset
+	} from '$lib/tauri/fs';
 	import { toolIcon, toolVerb } from '$lib/tauri/stream';
 	import { parseSummaryFrontmatter, isMetaEmpty } from '$lib/summary-meta';
 	import {
@@ -23,7 +30,19 @@
 		ChevronRight,
 		X
 	} from 'lucide-svelte';
+	import { Download, KeyRound } from 'lucide-svelte';
 	import { onDestroy, onMount } from 'svelte';
+	import { ask } from '@tauri-apps/plugin-dialog';
+	import { goto } from '$app/navigation';
+	import { summaryMeta } from '$lib/stores.svelte';
+	import { cn } from '$lib/utils/cn';
+	import {
+		decodeBase64,
+		fetchAlphaXivImage,
+		getAlphaXivCredentialStatus,
+		getAlphaXivPaperContent,
+		imageExtension
+	} from '$lib/tauri/alphaxiv';
 
 	let { paper }: { paper: Paper } = $props();
 
@@ -36,6 +55,10 @@
 	let loaded = $state(false);
 	let stderrExpanded = $state(true);
 	let now = $state(Date.now());
+	let alphaXivConfigured = $state(false);
+	let alphaXivImporting = $state(false);
+	let alphaXivError = $state<string | null>(null);
+	let alphaXivMessage = $state<string | null>(null);
 
 	let lastReloadAt = $state<number>(0);
 
@@ -44,6 +67,7 @@
 	const jobError = $derived(job?.status === 'error' ? job : null);
 	const canSummarize = $derived(!!paper.pdfPath || !!paper.sourceUrl);
 	const isWebpage = $derived(!paper.pdfPath && !!paper.sourceUrl);
+	const isArxivPaper = $derived(/^\d{4}\.\d{4,5}$/.test(paper.arxivId));
 
 	let tickInterval: ReturnType<typeof setInterval> | null = null;
 	$effect(() => {
@@ -61,13 +85,68 @@
 		if (tickInterval != null) clearInterval(tickInterval);
 	});
 
+	function mimeForFileName(fileName: string): string {
+		const extension = fileName.split('.').pop()?.toLowerCase();
+		switch (extension) {
+			case 'jpg':
+			case 'jpeg':
+				return 'image/jpeg';
+			case 'webp':
+				return 'image/webp';
+			case 'gif':
+				return 'image/gif';
+			default:
+				return 'image/png';
+		}
+	}
+
+	function bytesToDataUrl(bytes: Uint8Array, mimeType: string): Promise<string> {
+		return new Promise((resolve, reject) => {
+			const copy = new Uint8Array(bytes.byteLength);
+			copy.set(bytes);
+			const reader = new FileReader();
+			reader.onload = () => resolve(String(reader.result));
+			reader.onerror = () => reject(reader.error ?? new Error('Could not read summary image'));
+			reader.readAsDataURL(new Blob([copy.buffer], { type: mimeType }));
+		});
+	}
+
+	async function inlineLocalImages(body: string): Promise<string> {
+		const matches = [...body.matchAll(/summary-assets\/([a-zA-Z0-9][a-zA-Z0-9._-]*)/g)];
+		const fileNames = [...new Set(matches.map((match) => match[1]))];
+		let rendered = body;
+		for (const fileName of fileNames) {
+			try {
+				const bytes = await readPaperSummaryAsset(
+					paper.threadId ?? INBOX_SLUG,
+					paper.arxivId,
+					fileName
+				);
+				const dataUrl = await bytesToDataUrl(bytes, mimeForFileName(fileName));
+				rendered = rendered.split(`summary-assets/${fileName}`).join(dataUrl);
+			} catch (e) {
+				console.warn(`[summary] could not load local asset ${fileName}`, e);
+			}
+		}
+		return rendered;
+	}
+
+	async function renderBody(body: string): Promise<string> {
+		const withLocalImages = await inlineLocalImages(body);
+		const html = await marked.parse(withLocalImages);
+		return DOMPurify.sanitize(html, {
+			USE_PROFILES: { html: true },
+			ADD_DATA_URI_TAGS: ['img']
+		});
+	}
+
 	async function load() {
 		loaded = false;
 		summary = await readPaperSummary(paper.threadId ?? INBOX_SLUG, paper.arxivId);
 		if (summary) {
 			const { meta, body } = parseSummaryFrontmatter(summary);
 			summaryFrontmatter = isMetaEmpty(meta) ? null : meta;
-			summaryHtml = await marked.parse(body);
+			summaryHtml = await renderBody(body);
 		} else {
 			summaryFrontmatter = null;
 			summaryHtml = '';
@@ -91,8 +170,96 @@
 	});
 
 	async function generate() {
+		alphaXivError = null;
+		alphaXivMessage = null;
 		stderrExpanded = true;
 		await startSummary(paper);
+	}
+
+	async function importAlphaXiv() {
+		if (!alphaXivConfigured) {
+			await goto('/settings');
+			return;
+		}
+		if (summary) {
+			const ok = await ask(
+				'Replace the current summary with AlphaXiv’s report? The existing summary will be overwritten.',
+				{ title: 'Import AlphaXiv report', kind: 'warning', okLabel: 'Replace', cancelLabel: 'Cancel' }
+			);
+			if (!ok) return;
+		}
+		alphaXivImporting = true;
+		alphaXivError = null;
+		alphaXivMessage = null;
+		try {
+			const sourceUrl = `https://www.alphaxiv.org/abs/${paper.arxivId}`;
+			const result = await getAlphaXivPaperContent(sourceUrl);
+			const slug = paper.threadId ?? INBOX_SLUG;
+			const preservedMeta = summary ? parseSummaryFrontmatter(summary).meta : null;
+			let markdown = result.markdown.trim();
+			let imageCount = 0;
+			let failedImageCount = 0;
+
+			for (const image of result.images) {
+				await writePaperSummaryAsset(slug, paper.arxivId, image.fileName, decodeBase64(image.data));
+				imageCount++;
+			}
+
+			// The MCP report is often text-only. Merge any URLs it contains with the
+			// bounded set of overview figure URLs discovered by the Rust command.
+			const remotePattern = /https:\/\/paper-assets\.alphaxiv\.org\/[^\s)"']+/g;
+			const remoteUrls = [
+				...new Set([...result.imageUrls, ...(markdown.match(remotePattern) ?? [])])
+			].slice(0, 24);
+			for (const [index, url] of remoteUrls.entries()) {
+				try {
+					const image = await fetchAlphaXivImage(url);
+					const fileName = `alphaxiv-remote-${String(index + 1).padStart(2, '0')}.${imageExtension(image.mimeType)}`;
+					await writePaperSummaryAsset(slug, paper.arxivId, fileName, decodeBase64(image.data));
+					if (markdown.includes(url)) {
+						markdown = markdown.split(url).join(`summary-assets/${fileName}`);
+					} else {
+						markdown += `\n\n![AlphaXiv overview figure ${index + 1}](summary-assets/${fileName})`;
+					}
+					imageCount++;
+				} catch (error) {
+					failedImageCount++;
+					console.warn(`[alphaxiv] could not import overview image ${index + 1}`, error);
+				}
+			}
+
+			const importedAt = new Date().toISOString();
+			const topics = preservedMeta?.topics ?? [];
+			const domains = preservedMeta?.domains ?? [];
+			const keywords = preservedMeta?.keywords ?? [];
+			const document = `---\ntopics: ${JSON.stringify(topics)}\ndomains: ${JSON.stringify(domains)}\nkeywords: ${JSON.stringify(keywords)}\nsummary-source: alphaxiv\nsummary-source-url: ${sourceUrl}\nsummary-imported-at: ${importedAt}\n---\n\n> Imported from [AlphaXiv](${sourceUrl}) on ${importedAt.slice(0, 10)}.\n\n${markdown}\n`;
+			await writePaperSummary(slug, paper.arxivId, document);
+			if (isMetaEmpty(preservedMeta)) {
+				if (summaryMeta.has(paper.id)) await summaryMeta.remove(paper.id);
+			} else {
+				await summaryMeta.set({
+					paperId: paper.id,
+					topics,
+					domains,
+					keywords,
+					updatedAt: importedAt
+				});
+			}
+			await load();
+			const imageResult = imageCount
+				? ` with ${imageCount} image${imageCount === 1 ? '' : 's'}`
+				: '';
+			const imageProblem = failedImageCount
+				? ` ${failedImageCount} image${failedImageCount === 1 ? '' : 's'} could not be downloaded.`
+				: result.imageWarning
+					? ` ${result.imageWarning}`
+					: '';
+			alphaXivMessage = `AlphaXiv report imported${imageResult}.${imageProblem}`;
+		} catch (e) {
+			alphaXivError = e instanceof Error ? e.message : String(e);
+		} finally {
+			alphaXivImporting = false;
+		}
 	}
 
 	async function cancel() {
@@ -103,8 +270,13 @@
 		clearJob(paper.id);
 	}
 
-	onMount(() => {
+	onMount(async () => {
 		void load();
+		try {
+			alphaXivConfigured = (await getAlphaXivCredentialStatus()).configured;
+		} catch {
+			alphaXivConfigured = false;
+		}
 	});
 </script>
 
@@ -271,11 +443,24 @@
 	{:else if summary}
 		<div class="flex items-center justify-between border-b border-border/60 px-3 py-1.5">
 			<span class="text-[10px] uppercase tracking-wider text-muted-foreground">Summary</span>
-			<Button size="sm" variant="ghost" onclick={generate} disabled={!canSummarize}>
-				<RefreshCw class="h-3 w-3" />
-				Regenerate
-			</Button>
+			<div class="flex items-center gap-1">
+				{#if isArxivPaper}
+					<Button size="sm" variant="ghost" onclick={importAlphaXiv} disabled={alphaXivImporting}>
+						{#if alphaXivImporting}<Loader2 class="h-3 w-3 animate-spin" />{:else}<Download class="h-3 w-3" />{/if}
+						AlphaXiv
+					</Button>
+				{/if}
+				<Button size="sm" variant="ghost" onclick={generate} disabled={!canSummarize || alphaXivImporting}>
+					<RefreshCw class="h-3 w-3" />
+					Regenerate
+				</Button>
+			</div>
 		</div>
+		{#if alphaXivError || alphaXivMessage}
+			<div class={cn('border-b border-border/60 px-3 py-2 text-xs', alphaXivError ? 'text-destructive' : 'text-emerald-600 dark:text-emerald-400')}>
+				{alphaXivError ?? alphaXivMessage}
+			</div>
+		{/if}
 		<div class="flex-1 overflow-y-auto px-6 py-8 sm:px-10">
 			<div class="summary-md mx-auto">
 				{#if summaryFrontmatter}
@@ -322,10 +507,27 @@
 					No summary yet. Generate a builder-oriented review of this paper.
 				{/if}
 			</p>
-			<Button size="sm" onclick={generate} disabled={!canSummarize}>
-				<Sparkles class="h-3.5 w-3.5" />
-				Generate summary
-			</Button>
+			<div class="flex flex-wrap justify-center gap-2">
+				{#if isArxivPaper}
+					<Button size="sm" variant="outline" onclick={importAlphaXiv} disabled={alphaXivImporting}>
+						{#if alphaXivImporting}
+							<Loader2 class="h-3.5 w-3.5 animate-spin" />
+						{:else if alphaXivConfigured}
+							<Download class="h-3.5 w-3.5" />
+						{:else}
+							<KeyRound class="h-3.5 w-3.5" />
+						{/if}
+						{alphaXivConfigured ? 'Import from AlphaXiv' : 'Set AlphaXiv key'}
+					</Button>
+				{/if}
+				<Button size="sm" onclick={generate} disabled={!canSummarize || alphaXivImporting}>
+					<Sparkles class="h-3.5 w-3.5" />
+					Generate summary
+				</Button>
+			</div>
+			{#if alphaXivError}
+				<p class="max-w-md text-xs text-destructive">{alphaXivError}</p>
+			{/if}
 			<p class="mt-2 text-[10px] text-muted-foreground">
 				{#if isWebpage}
 					Powered by your local <code class="font-mono">claude</code> CLI · fetches the page live via WebFetch.
@@ -506,6 +708,16 @@
 	}
 	.summary-md :global(a:hover) {
 		text-decoration-thickness: 2px;
+	}
+	.summary-md :global(img) {
+		display: block;
+		max-width: min(100%, 960px);
+		height: auto;
+		margin: 1.5rem auto 0.65rem;
+		border: 1px solid hsl(var(--border) / 0.8);
+		border-radius: 10px;
+		background: white;
+		box-shadow: 0 10px 28px -18px hsl(var(--shadow-color) / 0.7);
 	}
 
 	/* Constrain prose to a comfortable reading width while letting tables span

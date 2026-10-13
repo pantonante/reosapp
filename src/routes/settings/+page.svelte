@@ -5,12 +5,41 @@
 	import { db } from '$lib/tauri/db';
 	import { INBOX_SLUG, readPaperSummary } from '$lib/tauri/fs';
 	import { parseSummaryFrontmatter, isMetaEmpty } from '$lib/summary-meta';
-	import { open as openDialog } from '@tauri-apps/plugin-dialog';
-	import { FolderOpen, RefreshCw, Loader2, Tags, Check } from 'lucide-svelte';
+	import { open as openDialog, ask } from '@tauri-apps/plugin-dialog';
+	import {
+		FolderOpen,
+		RefreshCw,
+		Loader2,
+		Tags,
+		Check,
+		KeyRound,
+		Eye,
+		EyeOff,
+		Trash2,
+		ExternalLink,
+		ShieldCheck,
+		Wifi,
+		Copy,
+		Share2
+	} from 'lucide-svelte';
 	import { onMount } from 'svelte';
 	import { theme, THEMES, type Theme } from '$lib/theme.svelte';
 	import { cn } from '$lib/utils/cn';
 	import { APP_VERSION } from '$lib/version';
+	import {
+		deleteAlphaXivApiKey,
+		getAlphaXivCredentialStatus,
+		saveAlphaXivApiKey,
+		testAlphaXivApiKey,
+		type AlphaXivCredentialStatus
+	} from '$lib/tauri/alphaxiv';
+	import { openExternal } from '$lib/tauri/shell';
+	import {
+		getRemoteServerStatus,
+		setRemoteServerEnabled,
+		shareRemoteAddress,
+		type RemoteServerStatus
+	} from '$lib/tauri/remote-server';
 
 	let rebuilding = $state(false);
 	let lastResult = $state<RebuildResult | null>(null);
@@ -21,9 +50,116 @@
 	let reindexResult = $state<{ scanned: number; indexed: number; cleared: number } | null>(null);
 	let reindexError = $state<string | null>(null);
 
+	let alphaXivStatus = $state<AlphaXivCredentialStatus | null>(null);
+	let alphaXivKey = $state('');
+	let alphaXivKeyVisible = $state(false);
+	let alphaXivBusy = $state<'save' | 'test' | 'remove' | null>(null);
+	let alphaXivMessage = $state<string | null>(null);
+	let alphaXivError = $state<string | null>(null);
+	let remoteServer = $state<RemoteServerStatus | null>(null);
+	let remoteServerBusy = $state(false);
+	let remoteServerError = $state<string | null>(null);
+	let copiedAddress = $state<string | null>(null);
+	let sharingAddress = $state<string | null>(null);
+
 	onMount(async () => {
 		builtAt = await db.getMeta('builtAt');
+		try {
+			remoteServer = await getRemoteServerStatus();
+		} catch (e) {
+			remoteServerError = e instanceof Error ? e.message : String(e);
+		}
+		try {
+			alphaXivStatus = await getAlphaXivCredentialStatus();
+		} catch (e) {
+			alphaXivError = e instanceof Error ? e.message : String(e);
+		}
 	});
+
+	async function toggleRemoteServer() {
+		remoteServerBusy = true;
+		remoteServerError = null;
+		try {
+			remoteServer = await setRemoteServerEnabled(!remoteServer?.running);
+			await config.load();
+		} catch (e) {
+			remoteServerError = e instanceof Error ? e.message : String(e);
+		} finally {
+			remoteServerBusy = false;
+		}
+	}
+
+	async function copyAddress(address: string) {
+		try {
+			await navigator.clipboard.writeText(address);
+			copiedAddress = address;
+		} catch (e) {
+			remoteServerError = e instanceof Error ? e.message : String(e);
+		}
+	}
+
+	async function shareAddress(address: string) {
+		sharingAddress = address;
+		remoteServerError = null;
+		try {
+			await shareRemoteAddress(address);
+		} catch (e) {
+			remoteServerError = e instanceof Error ? e.message : String(e);
+		} finally {
+			sharingAddress = null;
+		}
+	}
+
+	async function saveAlphaXivKey() {
+		if (!alphaXivKey.trim()) return;
+		alphaXivBusy = 'save';
+		alphaXivMessage = null;
+		alphaXivError = null;
+		try {
+			alphaXivStatus = await saveAlphaXivApiKey(alphaXivKey);
+			alphaXivKey = '';
+			alphaXivKeyVisible = false;
+			alphaXivMessage = 'Key saved to the system credential vault.';
+		} catch (e) {
+			alphaXivError = e instanceof Error ? e.message : String(e);
+		} finally {
+			alphaXivBusy = null;
+		}
+	}
+
+	async function testAlphaXivConnection() {
+		alphaXivBusy = 'test';
+		alphaXivMessage = null;
+		alphaXivError = null;
+		try {
+			await testAlphaXivApiKey();
+			alphaXivMessage = 'Connected. AlphaXiv paper reports are available.';
+		} catch (e) {
+			alphaXivError = e instanceof Error ? e.message : String(e);
+		} finally {
+			alphaXivBusy = null;
+		}
+	}
+
+	async function removeAlphaXivKey() {
+		const ok = await ask(
+			'Remove the AlphaXiv API key from this device? Already imported summaries and images will be kept.',
+			{ title: 'Remove AlphaXiv key', kind: 'warning', okLabel: 'Remove', cancelLabel: 'Cancel' }
+		);
+		if (!ok) return;
+		alphaXivBusy = 'remove';
+		alphaXivMessage = null;
+		alphaXivError = null;
+		try {
+			alphaXivStatus = await deleteAlphaXivApiKey();
+			alphaXivKey = '';
+			alphaXivMessage = 'AlphaXiv key removed.';
+		} catch (e) {
+			alphaXivError = e instanceof Error ? e.message : String(e);
+		} finally {
+			alphaXivBusy = null;
+		}
+	}
 
 	async function pickFolder() {
 		const result = await openDialog({
@@ -169,6 +305,174 @@
 				<FolderOpen class="h-4 w-4" />
 				Browse
 			</Button>
+		</div>
+	</Card>
+
+	<Card class="p-6">
+		<div class="flex items-start justify-between gap-4">
+			<div class="flex min-w-0 items-start gap-3">
+				<span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[9px] border border-border/70 bg-secondary/50">
+					<Wifi class="h-4 w-4 text-accent" />
+				</span>
+				<div>
+					<h2 class="text-sm font-semibold">iPad server</h2>
+					<p class="mt-1 max-w-xl text-xs leading-relaxed text-muted-foreground">
+						Browse your papers, PDFs, summaries, and notes from an iPad on the same network.
+						The server listens on all network interfaces while Re:OS is open.
+					</p>
+				</div>
+			</div>
+			<button
+				type="button"
+				role="switch"
+				aria-label="iPad server"
+				aria-checked={remoteServer?.running ?? false}
+				disabled={remoteServerBusy || !remoteServer || !config.value.papersDir}
+				class={cn('relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:opacity-50', remoteServer?.running ? 'bg-primary' : 'bg-muted')}
+				onclick={toggleRemoteServer}
+			>
+				<span class={cn('absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform', remoteServer?.running ? 'translate-x-0.5' : '-translate-x-[19px]')} style="left: 21px"></span>
+			</button>
+		</div>
+		{#if remoteServer?.running}
+			<div class="mt-5 border-t border-border/60 pt-4">
+				<p class="text-xs font-medium">Open one of these addresses in Safari on your iPad:</p>
+				{#if remoteServer.addresses.length}
+					<div class="mt-2 space-y-2">
+						{#each remoteServer.addresses as address}
+							<div class="flex items-center gap-2 rounded-[8px] border border-border/60 bg-secondary/30 p-2">
+								<code class="min-w-0 flex-1 select-all overflow-x-auto whitespace-nowrap px-1 font-mono text-xs">{address}</code>
+								<Button variant="outline" size="sm" aria-label="Copy address" onclick={() => copyAddress(address)}>
+									{#if copiedAddress === address}<Check class="h-3.5 w-3.5" />{:else}<Copy class="h-3.5 w-3.5" />{/if}
+								</Button>
+								{#if remoteServer.airdropAvailable}
+									<Button variant="outline" size="sm" aria-label="Share address with AirDrop" disabled={!!sharingAddress} onclick={() => shareAddress(address)}>
+										{#if sharingAddress === address}<Loader2 class="h-3.5 w-3.5 animate-spin" />{:else}<Share2 class="h-3.5 w-3.5" />{/if}
+										Share
+									</Button>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				{:else}
+					<p class="mt-2 text-xs text-muted-foreground">No active IPv4 network address found. Connect your Mac to Wi-Fi or Ethernet.</p>
+				{/if}
+				<p class="mt-3 text-[11px] text-muted-foreground">The address includes a private access key. Anyone with the link on your network can read your library and edit notes.</p>
+			</div>
+		{/if}
+		{#if remoteServerError}<p class="mt-3 text-xs text-destructive">{remoteServerError}</p>{/if}
+	</Card>
+
+	<Card class="overflow-hidden">
+		<div class="border-b border-border/60 bg-secondary/20 px-6 py-5">
+			<div class="flex flex-wrap items-start justify-between gap-3">
+				<div class="flex min-w-0 gap-3">
+					<span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[9px] border border-border/70 bg-background shadow-sm">
+						<KeyRound class="h-4 w-4 text-accent" />
+					</span>
+					<div>
+						<h2 class="text-sm font-semibold">AlphaXiv</h2>
+						<p class="mt-1 max-w-xl text-xs leading-relaxed text-muted-foreground">
+							Import available AI paper reports through AlphaXiv's official MCP API. Reports and
+							API-provided figures are cached with the paper for offline reading.
+						</p>
+					</div>
+				</div>
+				<div
+					class={cn(
+						'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider',
+						alphaXivStatus?.configured
+							? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+							: 'border-border/70 bg-background text-muted-foreground'
+					)}
+				>
+					<span
+						class={cn(
+							'h-1.5 w-1.5 rounded-full',
+							alphaXivStatus?.configured ? 'bg-emerald-500' : 'bg-muted-foreground/50'
+						)}
+					></span>
+					{alphaXivStatus?.configured ? `Configured ${alphaXivStatus.hint ?? ''}` : 'Not configured'}
+				</div>
+			</div>
+		</div>
+
+		<div class="px-6 py-5">
+			<label for="alphaxiv-key" class="text-xs font-medium">
+				{alphaXivStatus?.configured ? 'Replace API key' : 'API key'}
+			</label>
+			<div class="mt-2 flex flex-wrap gap-2">
+				<div class="relative min-w-[16rem] flex-1">
+					<Input
+						id="alphaxiv-key"
+						type={alphaXivKeyVisible ? 'text' : 'password'}
+						bind:value={alphaXivKey}
+						placeholder={alphaXivStatus?.configured ? 'Enter a replacement key' : 'axv2_…'}
+						autocomplete="off"
+						spellcheck={false}
+						class="pr-10 font-mono text-xs"
+						onkeydown={(e: KeyboardEvent) => {
+							if (e.key === 'Enter' && alphaXivKey.trim() && !alphaXivBusy) void saveAlphaXivKey();
+						}}
+					/>
+					<button
+						type="button"
+						class="absolute right-1 top-1 flex h-7 w-8 items-center justify-center rounded-[7px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+						onclick={() => (alphaXivKeyVisible = !alphaXivKeyVisible)}
+						aria-label={alphaXivKeyVisible ? 'Hide API key' : 'Show API key'}
+					>
+						{#if alphaXivKeyVisible}<EyeOff class="h-3.5 w-3.5" />{:else}<Eye class="h-3.5 w-3.5" />{/if}
+					</button>
+				</div>
+				<Button onclick={saveAlphaXivKey} disabled={!alphaXivKey.trim() || !!alphaXivBusy}>
+					{#if alphaXivBusy === 'save'}<Loader2 class="h-4 w-4 animate-spin" />{:else}<ShieldCheck class="h-4 w-4" />{/if}
+					Save key
+				</Button>
+			</div>
+
+			<div class="mt-3 flex flex-wrap items-center gap-2">
+				<Button
+					variant="outline"
+					size="sm"
+					onclick={testAlphaXivConnection}
+					disabled={!alphaXivStatus?.configured || !!alphaXivBusy}
+				>
+					{#if alphaXivBusy === 'test'}<Loader2 class="h-3.5 w-3.5 animate-spin" />{:else}<RefreshCw class="h-3.5 w-3.5" />{/if}
+					Test connection
+				</Button>
+				{#if alphaXivStatus?.configured}
+					<Button
+						variant="ghost"
+						size="sm"
+						class="text-destructive hover:text-destructive"
+						onclick={removeAlphaXivKey}
+						disabled={!!alphaXivBusy}
+					>
+						{#if alphaXivBusy === 'remove'}<Loader2 class="h-3.5 w-3.5 animate-spin" />{:else}<Trash2 class="h-3.5 w-3.5" />{/if}
+						Remove
+					</Button>
+				{/if}
+				<Button
+					variant="link"
+					size="sm"
+					class="ml-auto px-1"
+					onclick={() => openExternal('https://www.alphaxiv.org/settings')}
+				>
+					Manage keys on AlphaXiv
+					<ExternalLink class="h-3 w-3" />
+				</Button>
+			</div>
+
+			{#if alphaXivMessage}
+				<p class="mt-3 text-xs text-emerald-600 dark:text-emerald-400">{alphaXivMessage}</p>
+			{/if}
+			{#if alphaXivError}
+				<p class="mt-3 text-xs text-destructive">{alphaXivError}</p>
+			{/if}
+			<p class="mt-3 flex items-center gap-1.5 text-[11px] text-muted-foreground/80">
+				<ShieldCheck class="h-3 w-3 shrink-0" />
+				The key is stored in your system credential vault, never in the Re:OS database or papers folder.
+			</p>
 		</div>
 	</Card>
 
