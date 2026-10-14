@@ -64,6 +64,9 @@
 	}
 
 	async function discardPending() {
+		// Once the paper is saved the folder is no longer temporary, even if a
+		// later step failed and the dialog is still in review.
+		if (papers.items.some((p) => p.arxivId === pendingArxivId)) return;
 		if (pendingThreadSlug && pendingArxivId) {
 			try {
 				await removePaperFolder(pendingThreadSlug, pendingArxivId);
@@ -257,7 +260,10 @@
 		busy = true;
 		error = null;
 		try {
-			const id = `p${Date.now()}`;
+			// A previous attempt may have saved the paper before failing later on
+			// (e.g. attaching to the thread). Reuse its id so the retry upserts
+			// instead of colliding on the UNIQUE arxivId.
+			const id = papers.items.find((p) => p.arxivId === pendingArxivId)?.id ?? `p${Date.now()}`;
 			const authors = metaAuthors
 				.split(',')
 				.map((a) => a.trim())

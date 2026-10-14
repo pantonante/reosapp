@@ -279,10 +279,14 @@ export const db = {
 			[t.id, t.title, t.question, t.status, t.createdAt, t.updatedAt, t.parentId ?? null]
 		);
 		await conn.execute('DELETE FROM thread_papers WHERE threadId = ?', [t.id]);
+		// Not transactional (the plugin pools connections), so one dangling
+		// paperId must not abort the loop and leave the thread half-rewritten:
+		// skip memberships whose paper no longer exists instead of tripping the FK.
 		for (const p of t.papers) {
 			await conn.execute(
-				'INSERT INTO thread_papers(threadId, paperId, contextNote, "order") VALUES(?, ?, ?, ?)',
-				[t.id, p.paperId, p.contextNote, p.order]
+				`INSERT OR IGNORE INTO thread_papers(threadId, paperId, contextNote, "order")
+				SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM papers WHERE id = ?)`,
+				[t.id, p.paperId, p.contextNote, p.order, p.paperId]
 			);
 		}
 	},

@@ -64,6 +64,9 @@ function createPapersStore() {
 				await removePaperFolder(current.threadId ?? INBOX_SLUG, current.arxivId);
 			}
 			await db.removePaper(id);
+			// The DB cascade drops thread_papers rows; mirror it in memory so the
+			// next threads.update doesn't re-insert a dangling paperId.
+			threads.forgetPaper(id);
 		},
 		// Moves a paper between threads (or to/from inbox). Handles disk relocation,
 		// thread membership on both sides, and the paper's own threadId/pdfPath.
@@ -135,6 +138,14 @@ function createThreadsStore() {
 		},
 		set items(v: Thread[]) {
 			items = v;
+		},
+		/** In-memory only: drop a deleted paper from every thread's membership. */
+		forgetPaper(paperId: string) {
+			items = items.map((t) =>
+				t.papers.some((tp) => tp.paperId === paperId)
+					? { ...t, papers: t.papers.filter((tp) => tp.paperId !== paperId) }
+					: t
+			);
 		},
 		get loaded() {
 			return loaded;
