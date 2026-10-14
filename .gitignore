@@ -16,3 +16,6 @@ src-tauri/gen/schemas
 
 # MCP server build output
 mcp/dist
+
+# CodeGraph local index
+.codegraph/

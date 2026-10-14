@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
- * reos-mcp-server — read-only stdio MCP server for the Re:OS paper library.
+ * reos-mcp-server — stdio MCP server for the Re:OS paper library.
  *
- * Reads the library directly from disk (papersDir from ~/.reos/config.json);
- * never touches the app's SQLite cache and never writes under papersDir.
+ * Works on the library directly on disk (papersDir from ~/.reos/config.json)
+ * and never touches the app's SQLite cache. Read-only except for the additive
+ * create_thread/add_paper tools (see mutate.ts).
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';

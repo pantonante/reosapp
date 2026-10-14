@@ -1,15 +1,31 @@
-// The 8 read-only tools. List tools return compact JSON; get tools return
-// markdown. Descriptions encode the cost-first reading order from the app's
-// navigate-thread skill: meta -> summary -> notes -> chats -> PDF last.
+// The 8 read-only tools plus 2 write tools (create_thread, add_paper). List
+// tools return compact JSON; get tools return markdown. Descriptions encode the
+// cost-first reading order from the app's navigate-thread skill:
+// meta -> summary -> notes -> chats -> PDF last.
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { ConfigError } from './config.js';
+import { attachPdf, createThread, movePaper, writeNewPaper, type NewPaper } from './mutate.js';
 import { ResolveError, resolvePaper, resolveThread, searchPapers } from './search.js';
+import {
+	downloadArxivPdf,
+	downloadBiorxivPdf,
+	downloadPdf,
+	fetchArxivMeta,
+	fetchBiorxivMeta,
+	fetchWebSource,
+	localPaperId,
+	localTitleFromPath,
+	parseSource,
+	readLocalPdf,
+	type PaperSource
+} from './sources.js';
 import {
 	countChatsIn,
 	fileExists,
+	INBOX_SLUG,
 	listChatsIn,
 	listPaperIds,
 	listThreadArtifacts,
@@ -24,7 +40,9 @@ import {
 	readTextOrNull,
 	readThreadMeta,
 	reosMetaDir,
-	threadChatsDir
+	scanLibrary,
+	threadChatsDir,
+	type LibraryPaper
 } from './store.js';
 import type { StoredPaper } from './types.js';
 
@@ -37,6 +55,12 @@ const READ_ONLY = {
 	idempotentHint: true,
 	openWorldHint: false
 } as const;
+
+/** Raised by write tools for expected, user-fixable failures. */
+class ToolInputError extends Error {}
+
+const APP_SYNC_NOTE =
+	'The Re:OS app picks this up automatically the next time its window is focused (or within a few seconds if it is open).';
 
 type ToolResult = { content: Array<{ type: 'text'; text: string }>; isError?: boolean };
 
@@ -60,7 +84,11 @@ function safe<A>(fn: (args: A) => Promise<ToolResult>): (args: A) => Promise<Too
 		try {
 			return await fn(args);
 		} catch (err) {
-			if (err instanceof ConfigError || err instanceof ResolveError) {
+			if (
+				err instanceof ConfigError ||
+				err instanceof ResolveError ||
+				err instanceof ToolInputError
+			) {
 				return errorText(`Error: ${err.message}`);
 			}
 			return errorText(
@@ -82,6 +110,12 @@ const paperParam = z
 function truncate(s: string, max: number): string {
 	const t = s.trim().replace(/\s+/g, ' ');
 	return t.length > max ? t.slice(0, max) + '…' : t;
+}
+
+function authorsList(authors: string[], max = 10): string {
+	if (!authors.length) return '(unknown)';
+	if (authors.length <= max) return authors.join(', ');
+	return `${authors.slice(0, max).join(', ')}, … (${authors.length} total)`;
 }
 
 function authorsShort(authors: string[]): string {
@@ -516,4 +550,294 @@ Returns the markdown contents of _reos/vocabulary.md.`,
 			return text(content?.trim() || '(no vocabulary yet — no papers have been summarized)');
 		})
 	);
+
+	server.registerTool(
+		'create_thread',
+		{
+			title: 'Create a Re:OS thread',
+			description: `Create a new research thread (a narrative investigation that papers get filed into).
+
+Args:
+  - title: short thread title, e.g. 'Linear attention scaling'
+  - question (optional): the research question the thread investigates
+  - parent (optional): slug or title substring of an existing thread to nest this one under (sub-thread)
+
+Refuses when a thread with the same title already exists (returns its slug instead) — check list_threads first if unsure. Returns markdown with the new thread's slug; pass it as 'thread' to add_paper to file papers into it.`,
+			inputSchema: {
+				title: z.string().trim().min(1).max(200).describe('Thread title'),
+				question: z.string().trim().max(2000).optional().describe('Research question'),
+				parent: threadParam.optional().describe('Parent thread (slug or title substring)')
+			},
+			annotations: {
+				readOnlyHint: false,
+				destructiveHint: false,
+				idempotentHint: false,
+				openWorldHint: false
+			}
+		},
+		safe(async ({ title, question, parent }) => {
+			let parentId: string | null = null;
+			if (parent) {
+				parentId = (await resolveThread(parent)).slug;
+				if (parentId === INBOX_SLUG) {
+					throw new ToolInputError('The inbox cannot have sub-threads. Omit parent.');
+				}
+			}
+			for (const slug of await listThreadSlugs()) {
+				const meta = await readThreadMeta(slug);
+				if (meta && slug !== INBOX_SLUG && meta.title.toLowerCase() === title.toLowerCase()) {
+					throw new ToolInputError(
+						`A thread titled '${meta.title}' already exists (slug ${slug}). ` +
+							`Use that slug, or pick a different title.`
+					);
+				}
+			}
+			const meta = await createThread({ title, question: question ?? '', parentId });
+			return text(
+				[
+					`Created thread **${meta.title}** (slug \`${meta.id}\`).`,
+					'',
+					`- **Question**: ${meta.question || '(none)'}`,
+					parentId ? `- **Parent thread**: ${parentId}` : null,
+					'',
+					`Add papers with add_paper (thread: '${meta.id}'). ${APP_SYNC_NOTE}`
+				]
+					.filter((l) => l !== null)
+					.join('\n')
+			);
+		})
+	);
+
+	server.registerTool(
+		'add_paper',
+		{
+			title: 'Add a paper to Re:OS',
+			description: `Add a paper to the library: fetches metadata, gets the PDF, and files it into a thread (or the inbox).
+
+Accepted sources:
+  - arXiv ID or URL ('2301.08243', 'arxiv.org/abs/2301.08243v2', AlphaXiv links)
+  - bioRxiv/medRxiv URL or dated DOI ('10.1101/2024.01.02.573421')
+  - any other DOI ('10.1109/TOH.2013.6', 'https://doi.org/…') or http(s) URL (journal page, PubMed Central, direct PDF link, blog post)
+  - a local PDF file: absolute path, '~/…', or file:// URL ending in .pdf
+
+For DOIs and other URLs the PDF is found best-effort: a direct PDF link, the page's citation_pdf_url, then open-access copies listed by OpenAlex. Paywalled or bot-protected publishers (IEEE, SAGE, many society journals, PMC's PDF links) often can't be fetched — the paper is then saved as a webpage paper (no PDF) and the response says so. If you can obtain the PDF another way (e.g. ask the user to download it), pass pdf_path or pdf_url. Metadata for DOIs falls back to OpenAlex; pass title/authors/abstract/year when you know them better (always do this for local PDFs, whose title otherwise comes from the filename).
+
+Args:
+  - source: ID, DOI, URL, or local PDF path as above
+  - thread (optional): slug or title substring of the destination thread; default 'inbox'. Create one first with create_thread if needed.
+  - context_note (optional): why this paper belongs in the thread
+  - tags (optional): tags to attach
+  - title / authors / abstract / year (optional): metadata overrides
+  - pdf_path / pdf_url (optional, one of): the paper's PDF, used instead of automatic discovery
+
+Deduplicates: if the paper is already in the library it is not re-added. If it sits in the inbox and a thread is given, it is moved (filed) into that thread; if it belongs to a different thread it is left there. Either way, if it has no PDF yet, the PDF (pdf_path / pdf_url, or a fresh discovery attempt) is attached — so calling add_paper again with the same source and a pdf_path backfills a missing PDF. Returns markdown with the paper's arxivId (its id in every other tool), title, thread, and pdf_path.`,
+			inputSchema: {
+				source: z
+					.string()
+					.trim()
+					.min(1)
+					.describe('arXiv/bioRxiv/medRxiv ID, DOI, URL, or absolute path to a local PDF'),
+				thread: threadParam
+					.optional()
+					.describe("Destination thread (slug or title substring); default 'inbox'"),
+				context_note: z.string().trim().max(2000).optional().describe('Why this paper is in the thread'),
+				tags: z.array(z.string().trim().min(1)).optional().describe('Tags to attach'),
+				title: z.string().trim().min(1).optional().describe('Override the fetched title'),
+				authors: z.array(z.string().trim().min(1)).optional().describe('Override the fetched authors'),
+				abstract: z.string().trim().optional().describe('Override the fetched abstract'),
+				year: z
+					.string()
+					.regex(/^\d{4}$/)
+					.optional()
+					.describe('Publication year (YYYY), used when no date is fetched'),
+				pdf_path: z
+					.string()
+					.trim()
+					.min(1)
+					.optional()
+					.describe('Absolute (or ~/) path to a local copy of the PDF'),
+				pdf_url: z.string().trim().url().optional().describe('Direct URL of the PDF')
+			},
+			annotations: {
+				readOnlyHint: false,
+				destructiveHint: false,
+				idempotentHint: true,
+				openWorldHint: true
+			}
+		},
+		safe(async (args) => {
+			const parsed = parseSource(args.source);
+			if (!parsed) {
+				throw new ToolInputError(
+					`Could not parse '${args.source}' as an arXiv ID, DOI, URL, or local PDF path.`
+				);
+			}
+			if (args.pdf_path && args.pdf_url) {
+				throw new ToolInputError('Pass pdf_path or pdf_url, not both.');
+			}
+			const targetSlug = args.thread ? (await resolveThread(args.thread)).slug : INBOX_SLUG;
+
+			// Explicit PDFs are loaded up front so a bad path/URL fails before anything is written.
+			let explicitPdf: Uint8Array | null = null;
+			try {
+				if (parsed.kind === 'local') explicitPdf = await readLocalPdf(parsed.path);
+				else if (args.pdf_path) explicitPdf = await readLocalPdf(args.pdf_path);
+				else if (args.pdf_url) explicitPdf = await downloadPdf(args.pdf_url);
+			} catch (err) {
+				throw new ToolInputError(err instanceof Error ? err.message : String(err));
+			}
+			const arxivId = parsed.kind === 'local' ? localPaperId(explicitPdf!) : parsed.arxivId;
+
+			const library = await scanLibrary();
+			const existing = library.find(
+				(p) =>
+					p.meta.arxivId === arxivId ||
+					(parsed.kind === 'web' && p.meta.sourceUrl === parsed.normalizedUrl)
+			);
+			if (existing) {
+				// No thread given means "add if missing", not "file into the inbox".
+				const moveTo = args.thread ? targetSlug : null;
+				return text(await updateExisting(existing, moveTo, parsed, explicitPdf, args.context_note));
+			}
+
+			let paper: NewPaper;
+			let pdf = explicitPdf;
+			let pdfFailures: string[] = [];
+			if (parsed.kind === 'arxiv') {
+				const meta = await fetchArxivMeta(parsed.arxivId);
+				pdf ??= await downloadArxivPdf(parsed.arxivId);
+				paper = {
+					...meta,
+					arxivId,
+					tags: [],
+					arxivUrl: `https://arxiv.org/abs/${parsed.arxivId}`
+				};
+			} else if (parsed.kind === 'biorxiv') {
+				const { contentUrl, ...meta } = await fetchBiorxivMeta(parsed.ref);
+				pdf ??= await downloadBiorxivPdf(contentUrl);
+				paper = { ...meta, arxivId, tags: [], arxivUrl: contentUrl };
+			} else if (parsed.kind === 'web') {
+				const found = await fetchWebSource(parsed.normalizedUrl, { findPdf: !pdf });
+				pdf ??= found.pdf;
+				pdfFailures = found.failures;
+				paper = {
+					arxivId,
+					title: found.meta.title || new URL(parsed.normalizedUrl).hostname,
+					authors: found.meta.authors ?? [],
+					abstract: found.meta.abstract ?? '',
+					publishedDate: found.meta.publishedDate ?? '',
+					categories: [],
+					tags: [],
+					arxivUrl: '',
+					sourceUrl: parsed.normalizedUrl
+				};
+			} else {
+				paper = {
+					arxivId,
+					title: localTitleFromPath(parsed.path),
+					authors: [],
+					abstract: '',
+					publishedDate: '',
+					categories: [],
+					tags: [],
+					arxivUrl: ''
+				};
+			}
+			if (args.title) paper.title = args.title;
+			if (args.authors?.length) paper.authors = args.authors;
+			if (args.abstract !== undefined) paper.abstract = args.abstract;
+			if (args.year && !paper.publishedDate.startsWith(args.year)) {
+				paper.publishedDate = `${args.year}-01-01`;
+			}
+			if (args.tags?.length) paper.tags = [...new Set(args.tags)];
+			if (args.context_note) paper.contextNote = args.context_note;
+
+			const { meta, pdfPath } = await writeNewPaper(targetSlug, paper, pdf);
+			const lines = [
+				`Added **${meta.title}** (${meta.arxivId}) to ${targetSlug === INBOX_SLUG ? 'the inbox' : `thread '${targetSlug}'`}.`,
+				'',
+				`- **Authors**: ${authorsList(meta.authors)}`,
+				`- **Published**: ${meta.publishedDate || '(unknown)'}`
+			];
+			if (meta.tags.length) lines.push(`- **Tags**: ${meta.tags.join(', ')}`);
+			if (pdfPath) lines.push(`- **pdf_path**: ${pdfPath}`);
+			if (meta.sourceUrl) lines.push(`- **Source URL**: ${meta.sourceUrl}`);
+			if (!pdfPath) lines.push('', ...noPdfNotice(pdfFailures, true));
+			lines.push('', APP_SYNC_NOTE);
+			return text(lines.join('\n'));
+		})
+	);
+}
+
+function noPdfNotice(failures: string[], isNew: boolean): string[] {
+	return [
+		isNew
+			? '**No PDF found** — saved as a webpage paper (the app shows the source URL instead of a PDF).'
+			: '**Still no PDF** — automatic discovery found nothing new.',
+		...(failures.length ? ['Tried:', ...failures.map((f) => `  - ${f}`)] : []),
+		'To attach the PDF later, call add_paper again with the same source plus pdf_path (a local copy, e.g. one the user downloaded) or pdf_url.'
+	];
+}
+
+/**
+ * add_paper on a paper that's already in the library: file it out of the
+ * inbox if asked, and backfill a missing PDF.
+ */
+async function updateExisting(
+	existing: LibraryPaper,
+	targetSlug: string | null,
+	parsed: PaperSource,
+	explicitPdf: Uint8Array | null,
+	contextNote: string | undefined
+): Promise<string> {
+	const { meta } = existing;
+	let slug = existing.threadSlug;
+	const lines: string[] = [];
+	if (targetSlug === null || slug === targetSlug) {
+		lines.push(`**${meta.title}** (${meta.arxivId}) is already in ${where(slug)}.`);
+	} else if (slug === INBOX_SLUG) {
+		slug = targetSlug;
+		await movePaper(INBOX_SLUG, slug, meta.arxivId, contextNote);
+		lines.push(`Moved **${meta.title}** (${meta.arxivId}) from the inbox into thread '${slug}'.`);
+	} else {
+		lines.push(
+			`**${meta.title}** (${meta.arxivId}) is already in the library, in thread '${slug}'. ` +
+				`A paper belongs to one thread at a time, so it was left there (the user can move it in the app).`
+		);
+	}
+
+	const pdfPath = await paperPdfPath(slug, meta.arxivId);
+	if (await fileExists(pdfPath)) {
+		lines.push(`- **pdf_path**: ${pdfPath}`);
+		if (explicitPdf) lines.push('It already has a PDF; the one you passed was not used.');
+		if (slug !== existing.threadSlug) lines.push('', APP_SYNC_NOTE);
+		return lines.join('\n');
+	}
+
+	let pdf = explicitPdf;
+	let failures: string[] = [];
+	if (!pdf) {
+		try {
+			if (parsed.kind === 'arxiv') pdf = await downloadArxivPdf(parsed.arxivId);
+			else if (parsed.kind === 'biorxiv') pdf = await downloadBiorxivPdf(meta.arxivUrl);
+			else if (parsed.kind === 'web') {
+				const found = await fetchWebSource(parsed.normalizedUrl, { findPdf: true });
+				pdf = found.pdf;
+				failures = found.failures;
+			}
+		} catch (err) {
+			failures.push(err instanceof Error ? err.message : String(err));
+		}
+	}
+	if (pdf) {
+		lines.push(`Attached a PDF: ${await attachPdf(slug, meta.arxivId, pdf)}`);
+	} else {
+		lines.push('', ...noPdfNotice(failures, false));
+	}
+	if (pdf || slug !== existing.threadSlug) lines.push('', APP_SYNC_NOTE);
+	return lines.join('\n');
+}
+
+function where(slug: string): string {
+	return slug === INBOX_SLUG ? 'the inbox' : `thread '${slug}'`;
 }

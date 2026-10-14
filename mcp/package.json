@@ -1,7 +1,7 @@
 {
   "name": "reos-mcp-server",
   "version": "0.1.0",
-  "description": "Read-only MCP server for browsing and chatting with the Re:OS paper library",
+  "description": "MCP server for browsing, chatting with, and adding to the Re:OS paper library",
   "private": true,
   "type": "module",
   "main": "dist/index.js",

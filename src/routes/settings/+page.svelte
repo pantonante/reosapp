@@ -264,8 +264,9 @@
 	<Card class="p-6">
 		<h2 class="text-sm font-semibold">MCP server</h2>
 		<p class="mt-1 text-xs text-muted-foreground">
-			Chat with your papers and threads from Claude Code or Claude Desktop. The server is
-			read-only: it reads the papers folder directly and never modifies your library. It ships
+			Chat with your papers and threads from Claude Code or Claude Desktop, and let it file new
+			papers and threads. It works on the papers folder directly; the only writes it makes are
+			creating threads and adding papers — it never edits or deletes anything. It ships
 			with the Re:OS repo under <code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">mcp/</code>.
 		</p>
 
@@ -293,8 +294,8 @@ npm run build</pre>
 		<h3 class="mt-4 text-xs font-semibold">3. Use it</h3>
 		<p class="mt-1 text-xs text-muted-foreground">
 			Just ask in natural language — "list my active research threads", "what does paper
-			2301.08243 say", "summarize the discussions in thread Mocap". Under the hood the agent
-			gets eight tools:
+			2301.08243 say", "summarize the discussions in thread Mocap", "start a thread on diffusion
+			policies and add 2303.04137". Under the hood the agent gets eight read tools:
 			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">list_threads</code>,
 			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">get_thread</code>,
 			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">search_papers</code>,
@@ -302,8 +303,12 @@ npm run build</pre>
 			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">get_paper_content</code>,
 			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">list_chats</code>,
 			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">get_chat</code> and
-			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">get_vocabulary</code>.
-			It reads summaries and notes before falling back to PDFs, and it picks up the papers
+			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">get_vocabulary</code>, plus
+			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">create_thread</code> and
+			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">add_paper</code>
+			(arXiv, AlphaXiv, bioRxiv/medRxiv, any DOI or webpage URL, or a local PDF — open-access PDFs
+			are found automatically). Papers and threads it adds show up
+			here within a few seconds. It reads summaries and notes before falling back to PDFs, and it picks up the papers
 			folder configured above — no separate setup. After changing the folder here, new chats
 			see it immediately; rebuild is only needed when the server code itself changes.
 		</p>

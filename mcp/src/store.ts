@@ -1,7 +1,8 @@
 // Read-only filesystem layer over the Re:OS library. Path joins and read
 // semantics mirror ../../src/lib/tauri/fs.ts (same names where possible).
 // STRICTLY read-only: only readFile/readdir/stat are imported — never add
-// write/mkdir/rename/unlink here.
+// write/mkdir/rename/unlink here. The few writes the server makes live in
+// mutate.ts.
 
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';

@@ -13,17 +13,54 @@
 	import NewThreadModal from '$lib/components/NewThreadModal.svelte';
 	import BulkSummaryModal from '$lib/components/BulkSummaryModal.svelte';
 	import FirstRunWizard from '$lib/components/FirstRunWizard.svelte';
+	import { syncExternalChanges } from '$lib/tauri/external-sync';
 
 	let { children } = $props();
 	let booting = $state(true);
 
-	onMount(async () => {
-		theme.apply();
-		await config.load();
-		if (config.value.papersDir) {
-			await Promise.all([papers.load(), threads.load(), summaryMeta.load()]);
+	// Threads/papers added from outside the app (the MCP server) land on disk
+	// only; pull them into the cache on focus and on a short poll.
+	const EXTERNAL_SYNC_INTERVAL_MS = 5000;
+	let syncing = false;
+
+	async function pullExternalChanges() {
+		if (syncing || !papers.loaded) return;
+		syncing = true;
+		try {
+			if (await syncExternalChanges()) {
+				await Promise.all([papers.reload(), threads.reload()]);
+			}
+		} catch (e) {
+			console.error('[reos] external sync failed', e);
+		} finally {
+			syncing = false;
 		}
-		booting = false;
+	}
+
+	onMount(() => {
+		const onVisible = () => {
+			if (document.visibilityState === 'visible') void pullExternalChanges();
+		};
+		const onFocus = () => void pullExternalChanges();
+		window.addEventListener('focus', onFocus);
+		document.addEventListener('visibilitychange', onVisible);
+		const timer = setInterval(() => void pullExternalChanges(), EXTERNAL_SYNC_INTERVAL_MS);
+
+		(async () => {
+			theme.apply();
+			await config.load();
+			if (config.value.papersDir) {
+				await Promise.all([papers.load(), threads.load(), summaryMeta.load()]);
+				await pullExternalChanges();
+			}
+			booting = false;
+		})();
+
+		return () => {
+			window.removeEventListener('focus', onFocus);
+			document.removeEventListener('visibilitychange', onVisible);
+			clearInterval(timer);
+		};
 	});
 
 	const needsWizard = $derived(!booting && !config.value.papersDir);
