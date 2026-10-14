@@ -23,7 +23,7 @@
 		ChevronRight,
 		X
 	} from 'lucide-svelte';
-	import { onDestroy, onMount } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 
 	let { paper }: { paper: Paper } = $props();
 
@@ -75,11 +75,16 @@
 		loaded = true;
 	}
 
+	// Reload only when the summary's on-disk location changes. Store updates
+	// (e.g. setting a rating) replace the paper object; reloading on those would
+	// flip `loaded` and remount the scroll area, jumping back to the top.
+	const summaryKey = $derived(`${paper.id}|${paper.threadId ?? INBOX_SLUG}|${paper.arxivId}`);
 	$effect(() => {
-		if (paper.id) {
+		void summaryKey;
+		untrack(() => {
 			lastReloadAt = 0;
 			void load();
-		}
+		});
 	});
 
 	$effect(() => {
@@ -102,10 +107,6 @@
 	function dismissError() {
 		clearJob(paper.id);
 	}
-
-	onMount(() => {
-		void load();
-	});
 </script>
 
 <div class="flex h-full flex-col">

@@ -386,7 +386,7 @@
 				/>
 			</div>
 
-			<div class="grid grid-cols-[120px_1fr] gap-3">
+			<div class="grid grid-cols-[120px_minmax(0,1fr)] gap-3">
 				<div class="space-y-1.5">
 					<label
 						for="meta-year"

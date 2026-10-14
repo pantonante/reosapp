@@ -65,31 +65,35 @@
 	function close(tab: Tab, e: MouseEvent) {
 		e.stopPropagation();
 		const wasActive = isActive(tab);
-		let next: string | null;
+		// Closing a paper/thread also drops its attached chat tab.
+		const removed = (t: Tab) =>
+			t.id === tab.id &&
+			(t.kind === tab.kind ||
+				(tab.kind === 'paper' && t.kind === 'paper-chat') ||
+				(tab.kind === 'thread' && t.kind === 'thread-chat'));
+		// Fall back to the tab on the left, else the one on the right, else the inbox.
+		const idx = indexOfTab(tab);
+		const next =
+			tabs.slice(0, idx).findLast((t) => !removed(t)) ??
+			tabs.slice(idx + 1).find((t) => !removed(t)) ??
+			null;
 		switch (tab.kind) {
 			case 'paper':
-				next = ui.closePaper(tab.id);
+				ui.closePaper(tab.id);
 				break;
 			case 'thread':
-				next = ui.closeThread(tab.id);
+				ui.closeThread(tab.id);
 				break;
 			case 'paper-chat':
-				next = ui.closePaperChat(tab.id);
+				ui.closePaperChat(tab.id);
 				break;
 			case 'thread-chat':
-				next = ui.closeThreadChat(tab.id);
+				ui.closeThreadChat(tab.id);
 				break;
 		}
 		if (wasActive) {
-			if (next) {
-				const nextPath =
-					tab.kind === 'paper' || tab.kind === 'paper-chat'
-						? `/paper/${next}`
-						: `/threads/${next}`;
-				goto(nextPath);
-			} else {
-				goto('/');
-			}
+			if (next) activate(next);
+			else goto('/');
 		}
 	}
 
