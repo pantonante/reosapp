@@ -8,11 +8,11 @@
 	import SourceViewer from '$lib/components/SourceViewer.svelte';
 	import PaperChat from '$lib/components/PaperChat.svelte';
 	import PaperSummary from '$lib/components/PaperSummary.svelte';
-	import { revealInFinder, openExternal } from '$lib/tauri/shell';
+	import { revealInFinder, openExternal, airdropDriveLink } from '$lib/tauri/shell';
 	import { toAlphaxivUrl } from '$lib/arxiv';
 	import { readNotes, writeNotes } from '$lib/tauri/fs';
 	import { ask } from '@tauri-apps/plugin-dialog';
-	import { ExternalLink, FolderOpen, Copy, Star, FileText, Globe, Sparkles, MessageSquare, PanelRight, Inbox, Check, ArrowRightLeft, Github, Trash2, RotateCw } from 'lucide-svelte';
+	import { ExternalLink, FolderOpen, Copy, Star, FileText, Globe, Sparkles, MessageSquare, PanelRight, Inbox, Check, ArrowRightLeft, Github, Trash2, RotateCw, Share } from 'lucide-svelte';
 	import type { ReadingStatus } from '$lib/types';
 
 	const id = $derived(page.params.id!);
@@ -54,6 +54,8 @@
 	let moveQuery = $state('');
 	let pathCopyState = $state<'idle' | 'copied' | 'failed'>('idle');
 	let pathCopyReset: ReturnType<typeof setTimeout> | undefined;
+
+	let airdropError = $state<string | null>(null);
 
 	let refCopyState = $state<'idle' | 'copied' | 'failed'>('idle');
 	let refCopyReset: ReturnType<typeof setTimeout> | undefined;
@@ -126,6 +128,16 @@
 		}
 		if (pathCopyReset) clearTimeout(pathCopyReset);
 		pathCopyReset = setTimeout(() => (pathCopyState = 'idle'), 1800);
+	}
+
+	async function airdropPaper() {
+		if (!paper?.pdfPath) return;
+		airdropError = null;
+		try {
+			await airdropDriveLink(paper.pdfPath);
+		} catch (e) {
+			airdropError = String(e);
+		}
 	}
 
 	// Copies an unambiguous paper reference (id + title) for pasting into an
@@ -345,6 +357,17 @@
 							aria-label="Reload page"
 						>
 							<RotateCw class="h-3.5 w-3.5" />
+						</button>
+					{/if}
+					{#if paper.pdfPath}
+						<button
+							class="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+							class:text-destructive={airdropError}
+							onclick={airdropPaper}
+							title={airdropError ?? 'AirDrop the Google Drive link to this PDF'}
+							aria-label="AirDrop Drive link"
+						>
+							<Share class="h-3.5 w-3.5" />
 						</button>
 					{/if}
 					<button

@@ -35,6 +35,7 @@ pub fn run() {
             commands::extract::extract_pdf_metadata,
             commands::extract::extract_webpage_metadata,
             commands::finder::reveal_in_finder,
+            commands::share::airdrop_drive_link,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

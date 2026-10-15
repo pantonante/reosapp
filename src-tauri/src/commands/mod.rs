@@ -4,3 +4,4 @@ pub mod config;
 pub mod extract;
 pub mod finder;
 pub mod rebuild_cache;
+pub mod share;
