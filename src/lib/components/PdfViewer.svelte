@@ -19,12 +19,21 @@
 		scrollTop: number;
 		totalPages: number;
 		currentPage: number;
+		revision: number;
 	};
 	const pdfCache = new Map<string, CachedPdf>();
+	// Bumped when a paper's PDF file is replaced in place (same path), so a
+	// stash of the old document is never reattached.
+	const pdfRevisions = new Map<string, number>();
+
+	export function invalidatePdfCache(paperId: string) {
+		pdfRevisions.set(paperId, (pdfRevisions.get(paperId) ?? 0) + 1);
+		pdfCache.delete(paperId);
+	}
 </script>
 
 <script lang="ts">
-	import { onMount, onDestroy, tick } from 'svelte';
+	import { onMount, onDestroy, tick, untrack } from 'svelte';
 	import { readFile } from '@tauri-apps/plugin-fs';
 	import { Button } from '$lib/components/ui';
 	import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2, Minimize2, Highlighter } from 'lucide-svelte';
@@ -39,6 +48,8 @@
 		threadSlug,
 		arxivId
 	}: { path: string; paperId?: string; threadSlug: string; arxivId: string } = $props();
+	// Revision of this paper's file at mount; see invalidatePdfCache.
+	const revision = untrack(() => (paperId ? (pdfRevisions.get(paperId) ?? 0) : 0));
 
 	let scrollContainer = $state<HTMLDivElement | undefined>();
 	let canvasContainer = $state<HTMLDivElement | undefined>();
@@ -459,7 +470,7 @@
 			// rendered canvases in the cache. Reattach them and skip the file
 			// read + rasterize entirely.
 			const cached = paperId ? pdfCache.get(paperId) : null;
-			if (cached && cached.path === path) {
+			if (cached && cached.path === path && cached.revision === revision) {
 				const ok = await restoreFromCache(cached);
 				if (ok) return;
 			}
@@ -769,7 +780,8 @@
 				scale,
 				scrollTop: scrollContainer?.scrollTop ?? 0,
 				totalPages,
-				currentPage
+				currentPage,
+				revision
 			});
 		} else {
 			for (const builder of textLayerBuilders) builder?.cancel?.();

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { papers, threads, threadAncestors } from '$lib/stores.svelte';
+	import { noteTabId, papers, threads, threadAncestors, ui } from '$lib/stores.svelte';
 	import { ChevronRight } from 'lucide-svelte';
 
 	type Crumb = { label: string; href?: string };
@@ -30,7 +30,11 @@
 			}
 			out.push({ label: title, href: `/threads/${segs[1]}` });
 			if (segs[2] === 'chat') out.push({ label: 'chat' });
-			else out.push({ label: segs[2] });
+			else if (segs[2] === 'notes' && segs[3]) {
+				const id = noteTabId(segs[1], segs[3]);
+				const ref = ui.openTabs.find((r) => r.kind === 'note' && r.id === id);
+				out.push({ label: (ref?.kind === 'note' && ref.title) || 'note' });
+			} else out.push({ label: segs[2] });
 			return out;
 		}
 

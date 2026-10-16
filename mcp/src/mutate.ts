@@ -1,23 +1,35 @@
-// Write layer for the two mutating tools (create_thread, add_paper). Kept
-// apart from store.ts so the read path stays provably read-only. Layout and
-// meta.json shapes mirror writeThreadMeta/writePaperMeta in
-// ../../src/lib/tauri/fs.ts.
+// Write layer for the mutating tools (create_thread, add_paper, create_note,
+// update_note). Kept apart from store.ts so the read path stays provably
+// read-only. Layout and meta.json shapes mirror writeThreadMeta/writePaperMeta
+// in ../../src/lib/tauri/fs.ts; note files mirror ../../src/lib/tauri/notes.ts.
 //
 // The app reads from a SQLite cache, not the disk, so every write here ends
 // with touchExternalChanges(): the app polls _reos/external-changes.json and
-// pulls new threads/papers into its cache (src/lib/tauri/external-sync.ts).
+// pulls new threads/papers into its cache (src/lib/tauri/external-sync.ts)
+// and re-reads the open thread's notes.
 
-import { mkdir, rename, rm, stat, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { copyFile, mkdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { basename, join } from 'node:path';
+import {
+	MEDIA_EXTENSIONS,
+	NOTE_MEDIA_DIR,
+	mediaFileName,
+	serializeNote
+} from './note-format.js';
 import {
 	INBOX_SLUG,
 	listPaperIds,
 	paperDir,
 	readPaperMeta,
 	reosMetaDir,
-	threadDir
+	threadDir,
+	threadNotesDir
 } from './store.js';
-import type { StoredPaper, StoredThread } from './types.js';
+import type { StoredPaper, StoredThread, ThreadNote } from './types.js';
+
+/** Expected, caller-fixable failures (bad media path, …). */
+export class MutateInputError extends Error {}
 
 export const EXTERNAL_CHANGES_FILE = 'external-changes.json';
 
@@ -66,7 +78,7 @@ export async function ensureInbox(): Promise<void> {
 // within this process so back-to-back creates in one millisecond can't collide.
 let lastStamp = 0;
 
-function freshId(prefix: 't' | 'p'): string {
+function freshId(prefix: 't' | 'p' | 'n'): string {
 	lastStamp = Math.max(Date.now(), lastStamp + 1);
 	return `${prefix}${lastStamp}`;
 }
@@ -211,4 +223,134 @@ export async function attachPdf(
 	await writeFile(pdfPath, pdf);
 	await touchExternalChanges();
 	return pdfPath;
+}
+
+// --- Thread notes ---
+
+const MD_IMAGE_RE = /(!\[[^\]]*\]\(\s*)(<[^>]+>|[^)\s]+)((?:\s+"[^"]*")?\s*\))/g;
+const HTML_SRC_RE = /(\bsrc=)(["'])([^"']+)\2/g;
+
+/** An absolute local path (`/…`, `~/…`, `file://…`) — the only refs we import. */
+function localPath(ref: string): string | null {
+	let p = ref.trim();
+	if (p.startsWith('<') && p.endsWith('>')) p = p.slice(1, -1);
+	if (/^file:\/\//i.test(p)) p = p.replace(/^file:\/\//i, '');
+	else if (p.startsWith('~/')) p = join(homedir(), p.slice(2));
+	else if (!p.startsWith('/')) return null;
+	try {
+		return decodeURIComponent(p);
+	} catch {
+		return p;
+	}
+}
+
+/**
+ * Copy every image/video the markdown references by absolute local path into
+ * the thread's notes/media/ folder and rewrite the reference to the relative
+ * `media/<file>` form the app renders. URLs and existing media/ refs are left
+ * untouched.
+ */
+async function importLocalMedia(
+	threadSlug: string,
+	content: string
+): Promise<{ content: string; imported: string[] }> {
+	const sources = new Set<string>();
+	for (const m of content.matchAll(MD_IMAGE_RE)) {
+		const p = localPath(m[2]);
+		if (p) sources.add(p);
+	}
+	for (const m of content.matchAll(HTML_SRC_RE)) {
+		const p = localPath(m[3]);
+		if (p) sources.add(p);
+	}
+	if (!sources.size) return { content, imported: [] };
+
+	const mediaDir = join(await threadNotesDir(threadSlug), NOTE_MEDIA_DIR);
+	await mkdir(mediaDir, { recursive: true });
+	const rewritten = new Map<string, string>();
+	for (const src of sources) {
+		const ext = src.split('.').pop()?.toLowerCase() ?? '';
+		if (!MEDIA_EXTENSIONS.includes(ext)) {
+			throw new MutateInputError(
+				`'${src}' is not a supported image/video (${MEDIA_EXTENSIONS.join(', ')}).`
+			);
+		}
+		let info;
+		try {
+			info = await stat(src);
+		} catch {
+			throw new MutateInputError(`Media file not found: ${src}`);
+		}
+		if (!info.isFile()) throw new MutateInputError(`Not a file: ${src}`);
+		let name = mediaFileName(basename(src));
+		for (let i = 1; await exists(join(mediaDir, name)); i++) {
+			name = `${i}-${mediaFileName(basename(src))}`;
+		}
+		await copyFile(src, join(mediaDir, name));
+		rewritten.set(src, `${NOTE_MEDIA_DIR}/${name}`);
+	}
+
+	const swap = (ref: string) => {
+		const p = localPath(ref);
+		return (p && rewritten.get(p)) ?? ref;
+	};
+	const next = content
+		.replace(MD_IMAGE_RE, (_all, pre: string, ref: string, post: string) => pre + swap(ref) + post)
+		.replace(HTML_SRC_RE, (_all, pre: string, q: string, ref: string) => `${pre}${q}${swap(ref)}${q}`);
+	return { content: next, imported: [...rewritten.values()] };
+}
+
+async function writeNoteFile(threadSlug: string, note: ThreadNote): Promise<string> {
+	const dir = await threadNotesDir(threadSlug);
+	await mkdir(dir, { recursive: true });
+	const path = join(dir, `${note.id}.md`);
+	await writeFile(path, serializeNote(note));
+	return path;
+}
+
+export interface NoteWriteResult {
+	note: ThreadNote;
+	path: string;
+	/** `media/<file>` refs copied in from local paths. */
+	imported: string[];
+}
+
+export async function createNote(
+	threadSlug: string,
+	input: { title: string; content: string }
+): Promise<NoteWriteResult> {
+	let id = freshId('n');
+	while (await exists(join(await threadNotesDir(threadSlug), `${id}.md`))) id = freshId('n');
+	const { content, imported } = await importLocalMedia(threadSlug, input.content);
+	const now = new Date().toISOString();
+	const note: ThreadNote = { id, title: input.title, content, createdAt: now, updatedAt: now };
+	const path = await writeNoteFile(threadSlug, note);
+	await touchExternalChanges();
+	return { note, path, imported };
+}
+
+export async function updateNote(
+	threadSlug: string,
+	current: ThreadNote,
+	patch: { title?: string; content?: string; mode: 'replace' | 'append' }
+): Promise<NoteWriteResult> {
+	let body = current.content;
+	let imported: string[] = [];
+	if (patch.content !== undefined) {
+		const res = await importLocalMedia(threadSlug, patch.content);
+		imported = res.imported;
+		body =
+			patch.mode === 'append'
+				? `${current.content.replace(/\s+$/, '')}${current.content.trim() ? '\n\n' : ''}${res.content}`
+				: res.content;
+	}
+	const note: ThreadNote = {
+		...current,
+		title: patch.title ?? current.title,
+		content: body,
+		updatedAt: new Date().toISOString()
+	};
+	const path = await writeNoteFile(threadSlug, note);
+	await touchExternalChanges();
+	return { note, path, imported };
 }

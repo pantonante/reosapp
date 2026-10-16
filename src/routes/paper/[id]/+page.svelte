@@ -4,16 +4,18 @@
 	import { goto } from '$app/navigation';
 	import { papers, threads, ui, type MainView } from '$lib/stores.svelte';
 	import { Button, Badge, Textarea, Separator, Dialog, Input } from '$lib/components/ui';
-	import PdfViewer from '$lib/components/PdfViewer.svelte';
+	import PdfViewer, { invalidatePdfCache } from '$lib/components/PdfViewer.svelte';
 	import SourceViewer from '$lib/components/SourceViewer.svelte';
 	import PaperChat from '$lib/components/PaperChat.svelte';
 	import PaperSummary from '$lib/components/PaperSummary.svelte';
 	import { revealInFinder, openExternal, airdropDriveLink } from '$lib/tauri/shell';
 	import { toAlphaxivUrl } from '$lib/arxiv';
-	import { readNotes, writeNotes } from '$lib/tauri/fs';
-	import { ask } from '@tauri-apps/plugin-dialog';
-	import { ExternalLink, FolderOpen, Copy, Star, FileText, Globe, Sparkles, MessageSquare, PanelRight, Inbox, Check, ArrowRightLeft, Github, Trash2, RotateCw, Share } from 'lucide-svelte';
-	import type { ReadingStatus } from '$lib/types';
+	import { readNotes, writeNotes, writePaperPdf } from '$lib/tauri/fs';
+	import { readFile } from '@tauri-apps/plugin-fs';
+	import { extractPdfMetadata } from '$lib/tauri/extract';
+	import { ask, open as openDialog } from '@tauri-apps/plugin-dialog';
+	import { ExternalLink, FolderOpen, Copy, Star, FileText, Globe, Sparkles, MessageSquare, PanelRight, Inbox, Check, ArrowRightLeft, Github, Trash2, RotateCw, Share, FileUp, Loader2 } from 'lucide-svelte';
+	import type { Paper, ReadingStatus } from '$lib/types';
 
 	const id = $derived(page.params.id!);
 	const paper = $derived(papers.get(id));
@@ -128,6 +130,87 @@
 		}
 		if (pathCopyReset) clearTimeout(pathCopyReset);
 		pathCopyReset = setTimeout(() => (pathCopyState = 'idle'), 1800);
+	}
+
+	// Attach a PDF to a paper saved without one (e.g. a paywalled DOI the MCP
+	// server could only save as a webpage), or replace the current file. The
+	// paper keeps its id and folder, so note/MCP references keep resolving.
+	let pdfBusy = $state(false);
+	let pdfError = $state<string | null>(null);
+	let pdfRevision = $state(0);
+	let metaFill = $state<{ state: 'running' } | { state: 'done'; message: string } | null>(null);
+	let metaFillReset: ReturnType<typeof setTimeout> | undefined;
+
+	// Same extraction as adding a local PDF (claude CLI reads the file), but
+	// only fills fields the paper is missing — never overwrites existing data.
+	async function fillMissingMetadata(paperId: string, pdfPath: string) {
+		const missing = (p: Paper) => ({
+			title: !p.title.trim(),
+			authors: p.authors.length === 0,
+			abstract: !p.abstract.trim(),
+			publishedDate: !p.publishedDate
+		});
+		const before = papers.get(paperId);
+		if (!before || !Object.values(missing(before)).some(Boolean)) return;
+		if (metaFillReset) clearTimeout(metaFillReset);
+		metaFill = { state: 'running' };
+		let message: string;
+		try {
+			const meta = await extractPdfMetadata(pdfPath);
+			// Re-read: the user may have filled fields while extraction ran.
+			const current = papers.get(paperId);
+			if (!current) return;
+			const gaps = missing(current);
+			const patch: Partial<Paper> = {};
+			if (gaps.title && meta.title?.trim()) patch.title = meta.title.trim();
+			if (gaps.authors && meta.authors?.length) patch.authors = meta.authors;
+			if (gaps.abstract && meta.abstract?.trim()) patch.abstract = meta.abstract.trim();
+			if (gaps.publishedDate && /^\d{4}$/.test(meta.year?.trim() ?? ''))
+				patch.publishedDate = `${meta.year.trim()}-01-01`;
+			const filled = Object.keys(patch).map((k) => (k === 'publishedDate' ? 'year' : k));
+			if (filled.length) await papers.update(paperId, patch);
+			message = filled.length
+				? `Filled ${filled.join(', ')} from the PDF`
+				: 'No missing details found in the PDF';
+		} catch (e) {
+			message = `Couldn't read details from the PDF: ${e instanceof Error ? e.message : String(e)}`;
+		}
+		metaFill = { state: 'done', message };
+		metaFillReset = setTimeout(() => (metaFill = null), 6000);
+	}
+
+	async function attachPdf() {
+		if (!paper || pdfBusy) return;
+		const replacing = !!paper.pdfPath;
+		const picked = await openDialog({
+			multiple: false,
+			filters: [{ name: 'PDF', extensions: ['pdf'] }]
+		});
+		if (typeof picked !== 'string') return;
+		pdfError = null;
+		try {
+			const bytes = await readFile(picked);
+			const header = new TextDecoder().decode(bytes.slice(0, 5));
+			if (header !== '%PDF-') throw new Error('That file is not a PDF.');
+			if (replacing) {
+				const ok = await ask(
+					`Replace the PDF of "${paper.title}" with ${picked.split('/').pop()}?\n\nThe paper keeps its id, notes, summary, chats, and links. Existing highlights are kept but may not line up if the pages differ.`,
+					{ title: 'Replace PDF', kind: 'warning', okLabel: 'Replace', cancelLabel: 'Cancel' }
+				);
+				if (!ok) return;
+			}
+			pdfBusy = true;
+			const pdfPath = await writePaperPdf(paper.threadId ?? 'inbox', paper.arxivId, bytes);
+			invalidatePdfCache(paper.id);
+			pdfRevision += 1;
+			await papers.update(paper.id, { pdfPath });
+			setMainView('pdf');
+			void fillMissingMetadata(paper.id, pdfPath);
+		} catch (e) {
+			pdfError = e instanceof Error ? e.message : String(e);
+		} finally {
+			pdfBusy = false;
+		}
 	}
 
 	async function airdropPaper() {
@@ -359,6 +442,31 @@
 							<RotateCw class="h-3.5 w-3.5" />
 						</button>
 					{/if}
+					{#if metaFill}
+						<span class="flex max-w-[22rem] items-center gap-1 truncate px-2 text-[11px] text-muted-foreground" aria-live="polite">
+							{#if metaFill.state === 'running'}
+								<Loader2 class="h-3 w-3 shrink-0 animate-spin" />
+								Reading details from the PDF…
+							{:else}
+								{metaFill.message}
+							{/if}
+						</span>
+					{/if}
+					<button
+						class="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+						class:text-destructive={pdfError}
+						onclick={attachPdf}
+						disabled={pdfBusy}
+						title={pdfError ?? (paper.pdfPath ? 'Replace PDF…' : 'Attach PDF…')}
+						aria-label={paper.pdfPath ? 'Replace PDF' : 'Attach PDF'}
+					>
+						{#if pdfBusy}
+							<Loader2 class="h-3.5 w-3.5 animate-spin" />
+						{:else}
+							<FileUp class="h-3.5 w-3.5" />
+						{/if}
+						{#if !paper.pdfPath}<span>Attach PDF</span>{/if}
+					</button>
 					{#if paper.pdfPath}
 						<button
 							class="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -391,7 +499,7 @@
 					{#if isWebpage}
 						<SourceViewer url={paper.sourceUrl!} paperId={paper.id} {reloadToken} />
 					{:else}
-						{#key paper.id}
+						{#key `${paper.id}:${pdfRevision}`}
 							<PdfViewer
 								path={paper.pdfPath}
 								paperId={paper.id}

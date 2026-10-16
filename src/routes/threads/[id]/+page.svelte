@@ -2,20 +2,24 @@
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
 	import { papers, threads, threadChildren, threadAncestors, ui } from '$lib/stores.svelte';
-	import { Button, Dialog, Input } from '$lib/components/ui';
+	import { Badge, Button, Dialog, Input } from '$lib/components/ui';
 	import { goto } from '$app/navigation';
 	import {
 		Plus,
 		Trash2,
 		Archive,
 		ArchiveRestore,
-		MessageSquare,
-		ChevronDown,
 		ChevronRight,
-		FolderTree
+		FolderTree,
+		LibraryBig,
+		MessagesSquare,
+		NotebookPen
 	} from 'lucide-svelte';
 	import type { ReadingStatus, Thread, ThreadStatus } from '$lib/types';
 	import PaperCard from '$lib/components/PaperCard.svelte';
+	import { renderTitleHtml } from '$lib/utils/render-title';
+	import ThreadNotes from '$lib/components/ThreadNotes.svelte';
+	import ThreadChatList from '$lib/components/ThreadChatList.svelte';
 	import { cn } from '$lib/utils/cn';
 	import { ask } from '@tauri-apps/plugin-dialog';
 
@@ -38,19 +42,52 @@
 		if (id) untrack(() => ui.openThread(id));
 	});
 
+	type ThreadTab = 'library' | 'notes' | 'chats';
+	const TABS = [
+		{ value: 'library', label: 'Library', icon: LibraryBig },
+		{ value: 'notes', label: 'Notes', icon: NotebookPen },
+		{ value: 'chats', label: 'Chats', icon: MessagesSquare }
+	] as const;
+
+	// Remembered per thread, like the paper page's last view.
+	const tabKey = (tid: string) => `reos:threadTab:${tid}`;
+	let tab = $state<ThreadTab>('library');
+
+	$effect(() => {
+		const tid = id;
+		untrack(() => {
+			let stored: string | null = null;
+			try {
+				stored = localStorage.getItem(tabKey(tid));
+			} catch {
+				// storage unavailable — fall back to Library
+			}
+			tab = stored === 'chats' || stored === 'notes' ? stored : 'library';
+		});
+	});
+
+	function setTab(next: ThreadTab) {
+		tab = next;
+		try {
+			localStorage.setItem(tabKey(id), next);
+		} catch {
+			// best effort
+		}
+	}
+
 	let search = $state('');
 	let sortBy = $state<'order' | 'added' | 'published' | 'title' | 'rating'>('order');
-	let viewMode = $state<'library' | 'status'>('library');
+	let viewMode = $state<'library' | 'list' | 'status'>('library');
 
 	$effect(() => {
 		if (typeof localStorage === 'undefined') return;
 		const stored = localStorage.getItem('reos:threadViewMode');
-		if (stored === 'library' || stored === 'status') {
+		if (stored === 'library' || stored === 'list' || stored === 'status') {
 			untrack(() => (viewMode = stored));
 		}
 	});
 
-	function setViewMode(mode: 'library' | 'status') {
+	function setViewMode(mode: 'library' | 'list' | 'status') {
 		viewMode = mode;
 		if (typeof localStorage !== 'undefined') {
 			localStorage.setItem('reos:threadViewMode', mode);
@@ -131,8 +168,8 @@
 		if (!thread) return;
 		const subCount = subThreads.length;
 		const msg = subCount
-			? `Permanently delete thread "${thread.title}" and its ${subCount} sub-thread${subCount === 1 ? '' : 's'}?\n\nThis will:\n• Delete this thread, its synthesis notes, and its chats\n• Delete all ${subCount} nested sub-thread${subCount === 1 ? '' : 's'} (and their syntheses and chats)\n• Move every paper inside back to the inbox — papers, PDFs, notes, and annotations are kept\n• Remove the thread folders from disk\n\nThis cannot be undone.`
-			: `Permanently delete thread "${thread.title}"?\n\nThis will:\n• Delete this thread, its synthesis notes, and its chats\n• Move its papers back to the inbox — papers, PDFs, notes, and annotations are kept\n• Remove the thread folder from disk\n\nThis cannot be undone.`;
+			? `Permanently delete thread "${thread.title}" and its ${subCount} sub-thread${subCount === 1 ? '' : 's'}?\n\nThis will:\n• Delete this thread, its notes, synthesis, and chats\n• Delete all ${subCount} nested sub-thread${subCount === 1 ? '' : 's'} (and their notes, syntheses, and chats)\n• Move every paper inside back to the inbox — papers, PDFs, notes, and annotations are kept\n• Remove the thread folders from disk\n\nThis cannot be undone.`
+			: `Permanently delete thread "${thread.title}"?\n\nThis will:\n• Delete this thread, its notes, synthesis, and chats\n• Move its papers back to the inbox — papers, PDFs, notes, and annotations are kept\n• Remove the thread folder from disk\n\nThis cannot be undone.`;
 		const ok = await ask(msg, {
 			title: 'Delete thread',
 			kind: 'warning',
@@ -237,8 +274,8 @@
 	</div>
 {:else}
 	<div class="space-y-6 p-4 sm:p-8">
-		<header>
-			<div class="flex flex-wrap items-start justify-between gap-3">
+		<header class="space-y-1">
+			<div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
 				<div class="relative min-w-0 flex-1 basis-full lg:basis-0">
 					<span class="pointer-events-none absolute -top-5 left-0 text-[10px] text-muted-foreground">
 						created {thread.createdAt.slice(0, 10)}
@@ -248,44 +285,32 @@
 						value={thread.title}
 						onblur={(e) => threads.update(thread.id, { title: e.currentTarget.value })}
 					/>
-					<textarea
-						class="w-full resize-none bg-transparent text-sm text-muted-foreground focus:outline-none"
-						placeholder="What question does this thread explore?"
-						value={thread.question}
-						rows={1}
-						onblur={(e) => threads.update(thread.id, { question: e.currentTarget.value })}
-					></textarea>
 				</div>
-				<div class="flex flex-wrap items-center gap-2">
-					<Button
-						variant="subtle"
-						onclick={() => {
-							ui.openThreadChat(thread.id);
-							goto(`/threads/${thread.id}/chat`);
-						}}
+				<div class="flex flex-wrap items-center gap-3">
+					<div
+						class="flex items-center rounded-[10px] border border-border/60 bg-secondary/30 p-0.5 shadow-[inset_0_1px_0_0_hsl(var(--panel-highlight)/0.3)]"
+						role="tablist"
+						aria-label="Thread sections"
 					>
-						<MessageSquare class="h-4 w-4" />
-						Chat
-					</Button>
-					<Button onclick={openAddPaper}>
-						<Plus class="h-4 w-4" />
-						Add paper
-					</Button>
-					<label class="thread-status-select group">
-						<select
-							value={thread.status}
-							onchange={(e) => setStatus(e.currentTarget.value as ThreadStatus)}
-						>
-							<option value="active">Active</option>
-							<option value="paused">Paused</option>
-							<option value="concluded">Concluded</option>
-							<option value="archived">Archived</option>
-						</select>
-						<ChevronDown
-							class="pointer-events-none h-3.5 w-3.5 text-muted-foreground transition-colors group-hover:text-foreground"
-						/>
-					</label>
-					<div class="ml-1 flex items-center rounded-[10px] border border-border/60 bg-secondary/30 p-0.5 shadow-[inset_0_1px_0_0_hsl(var(--panel-highlight)/0.3)]">
+						{#each TABS as t (t.value)}
+							<button
+								type="button"
+								role="tab"
+								aria-selected={tab === t.value}
+								class={cn(
+									'flex h-8 items-center gap-1.5 rounded-[8px] px-3 text-sm font-medium transition-colors',
+									tab === t.value
+										? 'bg-secondary text-foreground shadow-[inset_0_1px_0_0_hsl(var(--panel-highlight)/0.4)]'
+										: 'text-muted-foreground hover:text-foreground'
+								)}
+								onclick={() => setTab(t.value)}
+							>
+								<t.icon class="h-4 w-4" />
+								{t.label}
+							</button>
+						{/each}
+					</div>
+					<div class="flex items-center rounded-[10px] border border-border/60 bg-secondary/30 p-0.5 shadow-[inset_0_1px_0_0_hsl(var(--panel-highlight)/0.3)]">
 						<Button
 							variant="ghost"
 							size="icon"
@@ -332,6 +357,13 @@
 					</div>
 				</div>
 			</div>
+			<textarea
+				class="w-full resize-none bg-transparent text-sm text-muted-foreground focus:outline-none"
+				placeholder="What question does this thread explore?"
+				value={thread.question}
+				rows={2}
+				onblur={(e) => threads.update(thread.id, { question: e.currentTarget.value })}
+			></textarea>
 		</header>
 
 		{#if ancestors.length > 0}
@@ -350,49 +382,48 @@
 			</nav>
 		{/if}
 
-		<section class="!mt-2 space-y-2">
-				<h3 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-					Sub-threads
-					{#if subThreads.length > 0}
-						<span class="ml-2 font-mono text-[10px] text-muted-foreground/80">{subThreads.length}</span>
-					{/if}
-				</h3>
-				<div class="flex flex-wrap gap-2">
-					{#each subThreads as st (st.id)}
-						{@const stChildren = threadChildren(st.id).length}
-						{@const isDropTarget = dropTargetThreadId === st.id}
-						<button
-							class={cn(
-								'rounded-md border bg-card px-2.5 py-1.5 text-left transition-colors',
-								isDropTarget
-									? 'border-accent bg-accent/10 ring-2 ring-accent/50'
-									: 'border-border/60 hover:border-border hover:bg-card/80'
-							)}
-							onclick={(e) => openThread(st.id, e)}
-							ondragover={(e) => onSubThreadDragOver(e, st.id)}
-							ondragleave={(e) => onSubThreadDragLeave(e, st.id)}
-							ondrop={(e) => onSubThreadDrop(e, st.id)}
-						>
-							<div class="flex items-center gap-2">
-								<span class="h-1.5 w-1.5 rounded-full {st.status === 'active' ? 'bg-accent' : st.status === 'paused' ? 'bg-yellow-500' : 'bg-muted-foreground/60'}"></span>
-								<span class="line-clamp-1 text-xs font-medium">{st.title}</span>
-							</div>
-							<div class="mt-0.5 text-[10px] text-muted-foreground">
-								{st.papers.length} papers{#if stChildren > 0} · {stChildren} sub{/if}
-							</div>
-						</button>
-					{/each}
-					<button
-						class="rounded-md border border-dashed border-border/60 bg-transparent px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-secondary/30 hover:text-foreground"
-						onclick={openNewSubThread}
-					>
-						<Plus class="inline h-3 w-3" />
-						New sub-thread
-					</button>
-				</div>
-			</section>
+		<section class="!mt-2 flex flex-wrap items-center gap-1.5" aria-label="Sub-threads">
+			<span class="mr-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+				Sub-threads
+			</span>
+			{#each subThreads as st (st.id)}
+				{@const stChildren = threadChildren(st.id).length}
+				{@const isDropTarget = dropTargetThreadId === st.id}
+				<button
+					class={cn(
+						'flex h-7 max-w-[18rem] items-center gap-1.5 rounded-md border bg-card px-2 text-xs transition-colors',
+						isDropTarget
+							? 'border-accent bg-accent/10 ring-2 ring-accent/50'
+							: 'border-border/60 hover:border-border hover:bg-card/80'
+					)}
+					title="{st.title} · {st.papers.length} papers{stChildren > 0 ? ` · ${stChildren} sub-threads` : ''}"
+					onclick={(e) => openThread(st.id, e)}
+					ondragover={(e) => onSubThreadDragOver(e, st.id)}
+					ondragleave={(e) => onSubThreadDragLeave(e, st.id)}
+					ondrop={(e) => onSubThreadDrop(e, st.id)}
+				>
+					<span class="h-1.5 w-1.5 shrink-0 rounded-full {st.status === 'active' ? 'bg-accent' : st.status === 'paused' ? 'bg-yellow-500' : 'bg-muted-foreground/60'}"></span>
+					<span class="truncate font-medium">{st.title}</span>
+					<span class="shrink-0 font-mono text-[10px] text-muted-foreground">{st.papers.length}</span>
+				</button>
+			{/each}
+			<button
+				class="flex h-7 items-center gap-1 rounded-md border border-dashed border-border/60 bg-transparent px-2 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-secondary/30 hover:text-foreground"
+				onclick={openNewSubThread}
+				title="New sub-thread"
+			>
+				<Plus class="h-3 w-3" />
+				New
+			</button>
+		</section>
 
-		<div class="!mt-2 flex flex-wrap items-center gap-2">
+		{#if tab === 'notes'}
+			<ThreadNotes threadSlug={thread.id} />
+		{:else if tab === 'chats'}
+			<ThreadChatList threadSlug={thread.id} />
+		{:else if tab === 'library'}
+		<div class="space-y-6">
+		<div class="flex flex-wrap items-center gap-2">
 			<Input
 				bind:value={search}
 				placeholder="Filter title, authors, arxiv ID…"
@@ -409,7 +440,19 @@
 					)}
 					onclick={() => setViewMode('library')}
 				>
-					Library
+					Grid
+				</button>
+				<button
+					type="button"
+					class={cn(
+						'h-7 rounded px-3 text-xs font-medium transition-colors',
+						viewMode === 'list'
+							? 'bg-secondary text-foreground'
+							: 'text-muted-foreground hover:text-foreground'
+					)}
+					onclick={() => setViewMode('list')}
+				>
+					List
 				</button>
 				<button
 					type="button"
@@ -434,6 +477,10 @@
 				<option value="title">Title</option>
 				<option value="rating">Rating</option>
 			</select>
+			<Button onclick={openAddPaper}>
+				<Plus class="h-4 w-4" />
+				Add paper
+			</Button>
 		</div>
 
 		{#if viewMode === 'library'}
@@ -458,6 +505,63 @@
 						</div>
 					{/if}
 				{/each}
+			</div>
+		{:else if viewMode === 'list'}
+			<div class="overflow-x-auto rounded-md border border-border/60">
+				<table class="w-full text-sm">
+					<thead class="border-b border-border/60 bg-muted/30 text-xs text-muted-foreground">
+						<tr>
+							<th class="px-3 py-2 text-left font-medium">Title</th>
+							<th class="px-3 py-2 text-left font-medium">Authors</th>
+							<th class="px-3 py-2 text-left font-medium">Published</th>
+							<th class="px-3 py-2 text-left font-medium">Status</th>
+							<th class="px-3 py-2 text-left font-medium">Rating</th>
+							<th class="w-8 px-2 py-2"><span class="sr-only">Actions</span></th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each filteredPapers as p (p?.id)}
+							{#if p}
+								<tr
+									class="group cursor-pointer border-b border-border/40 last:border-b-0 hover:bg-accent/5"
+									draggable="true"
+									ondragstart={(e) => onPaperDragStart(e, p.id)}
+									onclick={(e) => openPaper(p.id, e)}
+								>
+									<td class="px-3 py-2">
+										<div class="paper-title line-clamp-2 font-medium">{@html renderTitleHtml(p.title)}</div>
+										<div class="font-mono text-[10px] text-muted-foreground">{p.arxivId}</div>
+									</td>
+									<td class="px-3 py-2 text-xs text-muted-foreground">
+										{p.authors.slice(0, 2).join(', ')}{p.authors.length > 2 ? ' et al.' : ''}
+									</td>
+									<td class="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">
+										{p.publishedDate?.slice(0, 10) || '—'}
+									</td>
+									<td class="px-3 py-2">
+										<Badge variant="outline">{p.readingStatus}</Badge>
+									</td>
+									<td class="whitespace-nowrap px-3 py-2 text-xs text-amber-500">
+										{p.rating ? '★'.repeat(p.rating) : '—'}
+									</td>
+									<td class="px-2 py-2">
+										<button
+											class="rounded p-1 opacity-0 transition-opacity hover:bg-destructive/15 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+											onclick={(e) => {
+												e.stopPropagation();
+												removePaper(p.id);
+											}}
+											aria-label="Remove from thread"
+											title="Remove from thread"
+										>
+											<Trash2 class="h-3 w-3" />
+										</button>
+									</td>
+								</tr>
+							{/if}
+						{/each}
+					</tbody>
+				</table>
 			</div>
 		{:else}
 			<div class="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
@@ -508,6 +612,9 @@
 				{/each}
 			</div>
 		{/if}
+		</div>
+		{/if}
+
 
 	</div>
 

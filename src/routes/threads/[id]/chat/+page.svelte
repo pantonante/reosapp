@@ -6,6 +6,9 @@
 
 	const id = $derived(page.params.id!);
 	const thread = $derived(threads.get(id));
+	// `?c=<chatId>` opens a specific chat, `?new` a fresh one (thread page's list).
+	const initialChatId = $derived(page.url.searchParams.get('c'));
+	const startNew = $derived(page.url.searchParams.has('new'));
 
 	$effect(() => {
 		if (id) untrack(() => ui.openThreadChat(id));
@@ -18,6 +21,6 @@
 	</div>
 {:else}
 	<div class="h-full">
-		<ThreadChat {thread} />
+		<ThreadChat {thread} {initialChatId} {startNew} />
 	</div>
 {/if}

@@ -5,7 +5,8 @@
 //
 // Additive by design: new threads, new papers, papers whose folder moved to
 // another thread, and PDFs attached to papers that had none. Deletions on disk
-// are left to a full "Rebuild cache".
+// are left to a full "Rebuild cache". Thread notes aren't cached at all — a
+// fresh stamp just tells open note views to re-read the disk.
 
 import { exists, readTextFile } from '@tauri-apps/plugin-fs';
 import { join } from '@tauri-apps/api/path';
@@ -34,12 +35,18 @@ async function readChangeStamp(): Promise<string | null> {
 	}
 }
 
-/** Returns true when the cache changed and the stores should reload. */
-export async function syncExternalChanges(): Promise<boolean> {
+export interface ExternalSyncResult {
+	/** An external writer touched the library since the last sync. */
+	stale: boolean;
+	/** The cache changed and the paper/thread stores should reload. */
+	changed: boolean;
+}
+
+export async function syncExternalChanges(): Promise<ExternalSyncResult> {
 	const stamp = await readChangeStamp();
-	if (!stamp) return false;
+	if (!stamp) return { stale: false, changed: false };
 	const synced = await db.getMeta(SYNCED_KEY);
-	if (synced && synced >= stamp) return false;
+	if (synced && synced >= stamp) return { stale: false, changed: false };
 
 	const threads = new Map((await db.getAllThreads()).map((t) => [t.id, t]));
 	const papersByArxiv = new Map((await db.getAllPapers()).map((p) => [p.arxivId, p]));
@@ -118,5 +125,5 @@ export async function syncExternalChanges(): Promise<boolean> {
 		if (t) await db.addThread(t);
 	}
 	await db.setMeta(SYNCED_KEY, stamp);
-	return changed;
+	return { stale: true, changed };
 }

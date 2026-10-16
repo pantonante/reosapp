@@ -1,4 +1,5 @@
-// The 8 read-only tools plus 2 write tools (create_thread, add_paper). List
+// The 9 read-only tools plus 4 write tools (create_thread, add_paper,
+// create_note, update_note). List
 // tools return compact JSON; get tools return markdown. Descriptions encode the
 // cost-first reading order from the app's navigate-thread skill:
 // meta -> summary -> notes -> chats -> PDF last.
@@ -7,7 +8,18 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { ConfigError } from './config.js';
-import { attachPdf, createThread, movePaper, writeNewPaper, type NewPaper } from './mutate.js';
+import {
+	attachPdf,
+	createNote,
+	createThread,
+	movePaper,
+	MutateInputError,
+	updateNote,
+	writeNewPaper,
+	type NewPaper,
+	type NoteWriteResult
+} from './mutate.js';
+import { NOTE_MEDIA_DIR, noteExcerpt, paperRefs } from './note-format.js';
 import { ResolveError, resolvePaper, resolveThread, searchPapers } from './search.js';
 import {
 	downloadArxivPdf,
@@ -29,6 +41,7 @@ import {
 	listChatsIn,
 	listPaperIds,
 	listThreadArtifacts,
+	listThreadNotes,
 	listThreadSlugs,
 	paperChatsDir,
 	paperPdfPath,
@@ -42,9 +55,10 @@ import {
 	reosMetaDir,
 	scanLibrary,
 	threadChatsDir,
+	threadNotesDir,
 	type LibraryPaper
 } from './store.js';
-import type { StoredPaper } from './types.js';
+import type { StoredPaper, ThreadNote } from './types.js';
 
 const CHARACTER_LIMIT = 30000;
 const MAX_CHAT_MESSAGES = 200;
@@ -87,7 +101,8 @@ function safe<A>(fn: (args: A) => Promise<ToolResult>): (args: A) => Promise<Too
 			if (
 				err instanceof ConfigError ||
 				err instanceof ResolveError ||
-				err instanceof ToolInputError
+				err instanceof ToolInputError ||
+				err instanceof MutateInputError
 			) {
 				return errorText(`Error: ${err.message}`);
 			}
@@ -102,6 +117,12 @@ const threadParam = z
 	.string()
 	.min(1)
 	.describe("Thread slug (e.g. 't1777830790430', 'inbox') or a title substring");
+const noteParam = z
+	.string()
+	.min(1)
+	.describe(
+		`Note id (e.g. 'n1777830790430') or a title substring. A reference copied from the app reads 'n1777830790430 in thread t1777830790430 ("Title")' — pass the n… id here and the t… slug as thread.`
+	);
 const paperParam = z
 	.string()
 	.min(1)
@@ -187,7 +208,7 @@ Cost-first reading order for answering questions about a thread: this tool first
 Args:
   - thread: slug or title substring
 
-Returns markdown: thread meta (full question, parent/child threads), the papers in reading order with { arxivId, title, readingStatus, tags, contextNote, hasPdf, hasSummary, hasNotes }, ad-hoc markdown artifacts saved at the thread root, and the number of thread-level chats.`,
+Returns markdown: thread meta (full question, parent/child threads), the thread's markdown notes (id, title, excerpt — read them with get_note), the papers in reading order with { arxivId, title, readingStatus, tags, contextNote, hasPdf, hasSummary, hasNotes }, ad-hoc markdown artifacts saved at the thread root, and the number of thread-level chats.`,
 			inputSchema: { thread: threadParam },
 			annotations: READ_ONLY
 		},
@@ -217,9 +238,10 @@ Returns markdown: thread meta (full question, parent/child threads), the papers 
 				const m = await readThreadMeta(s);
 				if (m?.parentId === slug) children.push(s);
 			}
-			const [artifacts, chatCount] = await Promise.all([
+			const [artifacts, chatCount, notes] = await Promise.all([
 				listThreadArtifacts(slug),
-				countChatsIn(await threadChatsDir(slug))
+				countChatsIn(await threadChatsDir(slug)),
+				listThreadNotes(slug)
 			]);
 
 			const lines = [
@@ -234,6 +256,12 @@ Returns markdown: thread meta (full question, parent/child threads), the papers 
 			lines.push(`- **Thread-level chats**: ${chatCount} (see list_chats)`);
 			if (artifacts.length)
 				lines.push(`- **Artifacts at thread root**: ${artifacts.join(', ')}`);
+			lines.push('', `## Notes (${notes.length})`, '');
+			for (const n of notes) {
+				const excerpt = noteExcerpt(n.content, 120);
+				lines.push(`- **${n.title}** (\`${n.id}\`, updated ${n.updatedAt.slice(0, 10)})${excerpt ? ` — ${excerpt}` : ''}`);
+			}
+			if (notes.length) lines.push('', 'Read one in full with get_note.');
 			lines.push('', `## Papers (${papers.length})`, '');
 			for (const { m, flags } of papers) {
 				lines.push(`### ${m.title} (${m.arxivId})`);
@@ -767,6 +795,120 @@ Deduplicates: if the paper is already in the library it is not re-added. If it s
 			return text(lines.join('\n'));
 		})
 	);
+
+	server.registerTool(
+		'get_note',
+		{
+			title: 'Get a Re:OS thread note',
+			description: `Read one of a thread's markdown notes in full. Thread notes are free-form research notes that live in the thread itself (separate from papers and from per-paper notes.md); get_thread lists them.
+
+Args:
+  - thread: slug or title substring
+  - note: note id (from get_thread) or a title substring
+
+Returns markdown: the note's title, id, dates, absolute file path, and full body. Embedded media is referenced relative to the notes folder (e.g. media/plot.png); the media folder's absolute path is included so you can open those files.`,
+			inputSchema: { thread: threadParam, note: noteParam },
+			annotations: READ_ONLY
+		},
+		safe(async ({ thread, note }) => {
+			const { slug } = await resolveThread(thread);
+			const n = await resolveNote(slug, note);
+			const dir = await threadNotesDir(slug);
+			return text(
+				[
+					`# ${n.title}`,
+					'',
+					`- **Note id**: ${n.id} · **Thread**: ${slug}`,
+					`- **Created**: ${n.createdAt} · **Updated**: ${n.updatedAt}`,
+					`- **Path**: ${join(dir, `${n.id}.md`)}`,
+					`- **Media folder**: ${join(dir, NOTE_MEDIA_DIR)}`,
+					'',
+					'---',
+					'',
+					n.content.trim() || '(empty)'
+				].join('\n')
+			);
+		})
+	);
+
+	const NOTE_CONTENT_HELP = `Content is markdown (GFM tables, task lists, and $…$ / $$…$$ math render in the app). To embed an image or video, reference a local file by absolute path — ![caption](/abs/path/plot.png), ![](~/clip.mp4), or <img src="/abs/path.png" width="400"> — and it is copied into the thread's notes/media/ folder and the link rewritten (images: png, jpg, gif, webp, svg, avif; video: mp4, mov, webm, m4v, ogv; videos use the same ![…](…) syntax and render as a player). http(s) image URLs are left as-is.
+
+Citing papers — REQUIRED: every paper the note uses, quotes, or mentions must be linked inline with [text](paper:<arxivId>), e.g. 'builds on [Diffusion Policy](paper:2303.04137)'. The app renders these as links that open the paper. Never cite a paper as plain text or a bare URL. Before writing, find each paper's arxivId with search_papers (or get_thread); if a paper is not in the library, add it FIRST with add_paper (into this thread unless it clearly belongs elsewhere) and link it with the arxivId add_paper returns — non-arXiv sources get ids like 'doi-…' or 'web-…', so always use the returned id. The response lists any paper: links that don't match a library paper; fix those before finishing.`;
+
+	server.registerTool(
+		'create_note',
+		{
+			title: 'Create a Re:OS thread note',
+			description: `Create a markdown note inside a thread. Notes live in their own section of the thread (not among the papers) and the user can read and edit them in the app — use them for syntheses, comparisons, open questions, experiment logs, or anything worth keeping alongside the thread's papers.
+
+${NOTE_CONTENT_HELP}
+
+Args:
+  - thread: slug or title substring (sub-threads work the same way)
+  - title: short note title
+  - content: markdown body (don't repeat the title as a heading)
+
+Returns markdown with the new note's id (use it with update_note / get_note) and file path.`,
+			inputSchema: {
+				thread: threadParam,
+				title: z.string().trim().min(1).max(200).describe('Note title'),
+				content: z.string().describe('Markdown body')
+			},
+			annotations: {
+				readOnlyHint: false,
+				destructiveHint: false,
+				idempotentHint: false,
+				openWorldHint: false
+			}
+		},
+		safe(async ({ thread, title, content }) => {
+			const { slug } = await resolveThread(thread);
+			const res = await createNote(slug, { title, content });
+			return text(await noteWriteSummary(`Created note **${res.note.title}**`, slug, res));
+		})
+	);
+
+	server.registerTool(
+		'update_note',
+		{
+			title: 'Update a Re:OS thread note',
+			description: `Edit an existing thread note: rename it, replace its body, or append to it. The user may have edited the note in the app — when replacing, read it with get_note first and preserve their changes.
+
+${NOTE_CONTENT_HELP}
+
+Args:
+  - thread: slug or title substring
+  - note: note id or title substring
+  - title (optional): new title
+  - content (optional): markdown to write
+  - mode (default 'replace'): 'replace' overwrites the body with content; 'append' adds content at the end (separated by a blank line)
+
+Returns markdown with the note's id, path, and any media that was imported.`,
+			inputSchema: {
+				thread: threadParam,
+				note: noteParam,
+				title: z.string().trim().min(1).max(200).optional().describe('New title'),
+				content: z.string().optional().describe('Markdown body (or the part to append)'),
+				mode: z.enum(['replace', 'append']).default('replace')
+			},
+			annotations: {
+				readOnlyHint: false,
+				destructiveHint: true,
+				idempotentHint: false,
+				openWorldHint: false
+			}
+		},
+		safe(async ({ thread, note, title, content, mode }) => {
+			if (title === undefined && content === undefined) {
+				throw new ToolInputError('Nothing to update: pass title and/or content.');
+			}
+			const { slug } = await resolveThread(thread);
+			const current = await resolveNote(slug, note);
+			const res = await updateNote(slug, current, { title, content, mode });
+			const verb = content === undefined ? 'Renamed' : mode === 'append' ? 'Appended to' : 'Updated';
+			return text(await noteWriteSummary(`${verb} note **${res.note.title}**`, slug, res));
+		})
+	);
 }
 
 function noPdfNotice(failures: string[], isNew: boolean): string[] {
@@ -835,6 +977,63 @@ async function updateExisting(
 		lines.push('', ...noPdfNotice(failures, false));
 	}
 	if (pdf || slug !== existing.threadSlug) lines.push('', APP_SYNC_NOTE);
+	return lines.join('\n');
+}
+
+/** Exact id first, then a unique case-insensitive title substring. */
+async function resolveNote(threadSlug: string, query: string): Promise<ThreadNote> {
+	const notes = await listThreadNotes(threadSlug);
+	const byId = notes.find((n) => n.id === query);
+	if (byId) return byId;
+	const q = query.toLowerCase();
+	const exact = notes.filter((n) => n.title.toLowerCase() === q);
+	const matches = exact.length ? exact : notes.filter((n) => n.title.toLowerCase().includes(q));
+	if (matches.length === 1) return matches[0];
+	if (!matches.length) {
+		throw new ToolInputError(
+			notes.length
+				? `No note matching '${query}' in thread '${threadSlug}'. Notes: ${notes.map((n) => `${n.title} (${n.id})`).join('; ')}`
+				: `Thread '${threadSlug}' has no notes yet — create one with create_note.`
+		);
+	}
+	throw new ToolInputError(
+		`'${query}' matches ${matches.length} notes: ${matches.map((n) => `${n.title} (${n.id})`).join('; ')}. Pass the id.`
+	);
+}
+
+async function noteWriteSummary(
+	headline: string,
+	slug: string,
+	res: NoteWriteResult
+): Promise<string> {
+	const lines = [
+		`${headline} in thread '${slug}'.`,
+		'',
+		`- **Note id**: ${res.note.id}`,
+		`- **Path**: ${res.path}`
+	];
+	if (res.imported.length) lines.push(`- **Media imported**: ${res.imported.join(', ')}`);
+
+	// Paper links must resolve to a library paper (by arxivId or internal id).
+	const refs = [...paperRefs(res.note.content)];
+	if (refs.length) {
+		const known = new Set((await scanLibrary()).flatMap((p) => [p.meta.arxivId, p.meta.id]));
+		const missing = refs.filter((r) => !known.has(r));
+		lines.push(`- **Papers linked**: ${refs.length - missing.length} of ${refs.length} resolve`);
+		if (missing.length) {
+			lines.push(
+				'',
+				`**Unresolved paper links**: ${missing.map((m) => `paper:${m}`).join(', ')} — these don't match any paper in the library. ` +
+					`Add each with add_paper; if add_paper returns a different arxivId, update the note's link to it (update_note).`
+			);
+		}
+	} else {
+		lines.push(
+			'',
+			'No papers are linked. If this note draws on any paper, link it with [text](paper:<arxivId>) (add_paper first if it is not in the library).'
+		);
+	}
+	lines.push('', APP_SYNC_NOTE);
 	return lines.join('\n');
 }
 

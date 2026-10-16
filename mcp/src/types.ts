@@ -71,3 +71,12 @@ export interface SummaryFrontmatter {
 	domains: string[];
 	keywords: string[];
 }
+
+/** threads/<slug>/notes/<id>.md — frontmatter (title/createdAt/updatedAt) + markdown body */
+export interface ThreadNote {
+	id: string;
+	title: string;
+	content: string;
+	createdAt: string;
+	updatedAt: string;
+}

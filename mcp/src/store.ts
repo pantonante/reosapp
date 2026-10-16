@@ -7,6 +7,7 @@
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { papersRoot } from './config.js';
+import { NOTES_DIR, parseNote } from './note-format.js';
 import { parseSummaryFrontmatter, type ParsedSummary } from './summary-meta.js';
 import type {
 	ChatMessage,
@@ -14,7 +15,8 @@ import type {
 	PaperHighlight,
 	StoredPaper,
 	StoredThread,
-	SummaryFrontmatter
+	SummaryFrontmatter,
+	ThreadNote
 } from './types.js';
 
 export const INBOX_SLUG = 'inbox';
@@ -39,6 +41,10 @@ export async function threadChatsDir(threadSlug: string): Promise<string> {
 
 export async function paperChatsDir(threadSlug: string, arxivId: string): Promise<string> {
 	return join(await paperDir(threadSlug, arxivId), 'chats');
+}
+
+export async function threadNotesDir(threadSlug: string): Promise<string> {
+	return join(await threadDir(threadSlug), NOTES_DIR);
 }
 
 export async function reosMetaDir(): Promise<string> {
@@ -122,6 +128,36 @@ export async function readThreadMeta(slug: string): Promise<StoredThread | null>
 export async function listThreadArtifacts(slug: string): Promise<string[]> {
 	const files = await listFiles(await threadDir(slug));
 	return files.filter((f) => f.endsWith('.md')).sort();
+}
+
+// --- Thread notes ---
+
+/** Notes in creation order (the app's display order). */
+export async function listThreadNotes(threadSlug: string): Promise<ThreadNote[]> {
+	const dir = await threadNotesDir(threadSlug);
+	const notes: ThreadNote[] = [];
+	for (const name of await listFiles(dir)) {
+		if (!name.endsWith('.md')) continue;
+		const note = await readThreadNote(threadSlug, name.slice(0, -'.md'.length));
+		if (note) notes.push(note);
+	}
+	notes.sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
+	return notes;
+}
+
+export async function readThreadNote(
+	threadSlug: string,
+	noteId: string
+): Promise<ThreadNote | null> {
+	const path = join(await threadNotesDir(threadSlug), `${noteId}.md`);
+	let mtime: Date;
+	try {
+		mtime = (await stat(path)).mtime;
+	} catch {
+		return null;
+	}
+	const raw = await readTextOrNull(path);
+	return raw === null ? null : parseNote(noteId, raw, mtime.toISOString());
 }
 
 // --- Papers ---
