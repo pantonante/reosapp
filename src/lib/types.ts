@@ -105,3 +105,18 @@ export interface SummaryMeta {
 	keywords: string[];
 	updatedAt: string;
 }
+
+/**
+ * A free-form markdown note that belongs to a thread (not to a paper). Stored
+ * as `threads/<slug>/notes/<id>.md` with a small YAML frontmatter block; media
+ * it embeds lives next to it in `notes/media/` and is referenced relatively
+ * (`![](media/plot.png)`).
+ */
+export interface ThreadNote {
+	id: string;
+	title: string;
+	/** Markdown body, without the frontmatter. */
+	content: string;
+	createdAt: string;
+	updatedAt: string;
+}

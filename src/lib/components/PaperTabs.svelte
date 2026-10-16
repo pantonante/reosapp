@@ -2,16 +2,17 @@
 	import 'katex/dist/katex.min.css';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { papers, threads, ui, type TabRef } from '$lib/stores.svelte';
+	import { noteTabPath, papers, threads, ui, type TabRef } from '$lib/stores.svelte';
 	import { cn } from '$lib/utils/cn';
 	import { renderTitleHtml } from '$lib/utils/render-title';
-	import { X, Layers, MessageSquare } from 'lucide-svelte';
+	import { X, Layers, MessageSquare, NotebookPen } from 'lucide-svelte';
 
 	type Tab =
 		| { kind: 'paper'; id: string; title: string; status: string; temporary: boolean }
 		| { kind: 'thread'; id: string; title: string; temporary: boolean }
 		| { kind: 'paper-chat'; id: string; title: string; temporary: boolean }
-		| { kind: 'thread-chat'; id: string; title: string; temporary: boolean };
+		| { kind: 'thread-chat'; id: string; title: string; temporary: boolean }
+		| { kind: 'note'; id: string; title: string; temporary: boolean };
 
 	const tabs = $derived.by<Tab[]>(() => {
 		const out: Tab[] = [];
@@ -30,6 +31,10 @@
 			} else if (ref.kind === 'thread-chat') {
 				const t = threads.get(ref.id);
 				if (t) out.push({ kind: 'thread-chat', id: ref.id, title: t.title, temporary });
+			} else if (ref.kind === 'note') {
+				// Hidden once its thread is gone (e.g. deleted elsewhere).
+				if (threads.get(ref.id.split('/')[0]))
+					out.push({ kind: 'note', id: ref.id, title: ref.title || 'Note', temporary });
 			}
 		}
 		return out;
@@ -45,6 +50,8 @@
 				return `/paper/${tab.id}/chat`;
 			case 'thread-chat':
 				return `/threads/${tab.id}/chat`;
+			case 'note':
+				return noteTabPath(tab.id);
 		}
 	}
 
@@ -58,7 +65,7 @@
 		// the [id] page's openPaper effect.
 		if (!ui.openTabs.some((t) => t.kind === tab.kind && t.id === tab.id)) return;
 		if (tab.kind === 'paper' || tab.kind === 'paper-chat') ui.activePaperId = tab.id;
-		else ui.activeThreadId = tab.id;
+		else if (tab.kind !== 'note') ui.activeThreadId = tab.id;
 		goto(tabPath(tab));
 	}
 
@@ -70,7 +77,8 @@
 			t.id === tab.id &&
 			(t.kind === tab.kind ||
 				(tab.kind === 'paper' && t.kind === 'paper-chat') ||
-				(tab.kind === 'thread' && t.kind === 'thread-chat'));
+				(tab.kind === 'thread' && t.kind === 'thread-chat') ||
+				(tab.kind === 'thread' && t.kind === 'note' && t.id.startsWith(`${tab.id}/`)));
 		// Fall back to the tab on the left, else the one on the right, else the inbox.
 		const idx = indexOfTab(tab);
 		const next =
@@ -90,6 +98,11 @@
 			case 'thread-chat':
 				ui.closeThreadChat(tab.id);
 				break;
+			case 'note': {
+				const slash = tab.id.indexOf('/');
+				ui.closeNote(tab.id.slice(0, slash), tab.id.slice(slash + 1));
+				break;
+			}
 		}
 		if (wasActive) {
 			if (next) activate(next);
@@ -120,7 +133,7 @@
 
 	function parseKey(key: string): TabRef | null {
 		const [kind, ...rest] = key.split(':');
-		if (kind !== 'paper' && kind !== 'thread') return null;
+		if (kind !== 'paper' && kind !== 'thread' && kind !== 'note') return null;
 		return { kind, id: rest.join(':') };
 	}
 
@@ -298,6 +311,8 @@
 					<span class={cn('h-1.5 w-1.5 rounded-full', statusDot(tab.status))}></span>
 				{:else if tab.kind === 'thread'}
 					<Layers class="h-3 w-3" />
+				{:else if tab.kind === 'note'}
+					<NotebookPen class="h-3 w-3" />
 				{:else}
 					<MessageSquare class="h-3 w-3" />
 				{/if}

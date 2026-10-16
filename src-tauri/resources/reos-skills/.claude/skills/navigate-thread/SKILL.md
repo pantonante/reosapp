@@ -14,6 +14,9 @@ You are inside a Re:OS thread — a research investigation that bundles a set of
 ├── meta.json             # { id, title, question, status, createdAt, updatedAt }
 ├── synthesis.md          # the user's evolving synthesis (may be empty)
 ├── chats/<id>.jsonl      # prior thread-level chats (one JSON message per line)
+├── notes/                # thread notes, shown in the app's Notes section
+│   ├── <noteId>.md         # frontmatter (title/createdAt/updatedAt) + markdown
+│   └── media/              # images/videos the notes embed as ![](media/<file>)
 └── papers/<arxivId>/     # one folder per paper in the thread
     ├── meta.json           # { arxivId, title, authors, abstract, tags, readingStatus, … }
     ├── paper.pdf           # full PDF (Read tool handles PDFs natively)
@@ -69,6 +72,24 @@ Always read in increasing-cost order. Stop the moment you have what you need.
 1. Grep `summary.md` frontmatter (`topics:`, `domains:`, `keywords:`) for X first — that's the highest-signal index.
 2. Fall back to grepping the body of summaries.
 3. Return arxivId + title + a one-line "why this one".
+
+## Thread notes
+
+`notes/*.md` are the user's (and your) research notes for the thread — read them alongside `synthesis.md` when answering questions about the thread. When the user asks you to "make a note", "jot this down", or save something as a note, write a new file `notes/n<unix-ms>.md` (e.g. `notes/n1777830790430.md`) that starts with:
+
+```
+---
+title: "Short title"
+createdAt: <ISO timestamp>
+updatedAt: <ISO timestamp>
+---
+
+<markdown body>
+```
+
+Link papers inline with `[text](paper:<arxivId>)` — the arxivId is the paper's folder name under `papers/` (e.g. `[Diffusion Policy](paper:2303.04137)`); the app renders it as a link that opens the paper. Link papers wherever a note discusses them.
+
+To embed an image or video, copy the file into `notes/media/` and reference it relatively — `![caption](media/plot.png)`; videos (`.mp4`, `.mov`, `.webm`) use the same syntax and render as a player. When editing an existing note, keep its frontmatter, preserve the user's edits, and bump `updatedAt`.
 
 ## Writing artifacts
 

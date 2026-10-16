@@ -20,10 +20,21 @@
 		type StreamBlock
 	} from '$lib/tauri/stream';
 	import type { UnlistenFn } from '@tauri-apps/api/event';
-	import { onDestroy, onMount, tick } from 'svelte';
-	import { Send, Loader2, Clock, Plus } from 'lucide-svelte';
+	import { onDestroy, tick, untrack } from 'svelte';
+	import { Send, Loader2, MessageSquare, Plus } from 'lucide-svelte';
+	import { cn } from '$lib/utils/cn';
 
-	let { thread }: { thread: Thread } = $props();
+	let {
+		thread,
+		initialChatId = null,
+		startNew = false
+	}: {
+		thread: Thread;
+		/** Chat to open first (from the thread page's chat list). */
+		initialChatId?: string | null;
+		/** Open on a fresh, empty chat instead of the last one. */
+		startNew?: boolean;
+	} = $props();
 
 	const SYSTEM_PROMPT = `You are Re:OS's thread research assistant. Your working directory is a thread folder. You can read, edit, and create files freely within it.
 
@@ -33,6 +44,10 @@ Layout:
                            (may be empty; YAML frontmatter optional)
   chats/<id>.jsonl       — prior conversations on this thread
                            (one JSON message per line)
+  notes/<id>.md          — the thread's notes, shown in the app's Notes tab
+                           (YAML frontmatter: title, createdAt, updatedAt;
+                           media in notes/media/, embedded as ![](media/<file>);
+                           link papers as [text](paper:<arxivId>))
   papers/<arxivId>/      — one folder per paper in the thread, containing:
     meta.json              — paper metadata (title, authors, abstract, tags…)
     paper.pdf              — full PDF (readable with the Read tool)
@@ -45,7 +60,7 @@ Defaults:
   - Prefer reading summary.md before paper.pdf — it's distilled and cheap.
   - Prior chats (this thread's and per-paper) are valid context. Skim them before answering questions about "what we discussed".
   - When the user asks about a specific paper, read its meta.json and summary.md first; open paper.pdf only if those don't answer the question.
-  - When you produce artifacts (synthesis edits, comparison tables, new notes), write them into the thread folder using meaningful filenames.`;
+  - When you produce artifacts (synthesis edits, comparison tables), write them into the thread folder using meaningful filenames. When the user asks for a note, write it to notes/ in the format above so it shows up in the app.`;
 
 	const marked = new Marked({ async: false });
 	marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
@@ -60,8 +75,10 @@ Defaults:
 	let streamBlocks = $state<StreamBlock[]>([]);
 	let chats = $state<ChatSummary[]>([]);
 	let currentChatId = $state<string>('');
-	let historyOpen = $state(false);
 	let scrollRoot: HTMLDivElement;
+	let composerEl = $state<HTMLTextAreaElement | null>(null);
+	// A chat only gets a file (and a list entry) once its first message is sent.
+	const isUnsaved = $derived(!chats.some((c) => c.id === currentChatId));
 	let unlisten: UnlistenFn | null = null;
 	let sessionId = '';
 
@@ -73,10 +90,21 @@ Defaults:
 		chats = await listThreadChats(thread.id);
 	}
 
+	// Last chat viewed per thread, so returning to the chat tab lands on it.
+	const lastChatKey = (tid: string) => `reos:threadChat:${tid}`;
+
+	function rememberChat(id: string) {
+		try {
+			localStorage.setItem(lastChatKey(thread.id), id);
+		} catch {
+			// best effort
+		}
+	}
+
 	async function openChat(id: string) {
 		currentChatId = id;
+		rememberChat(id);
 		messages = await readThreadChat(thread.id, id);
-		historyOpen = false;
 		await tick();
 		scrollToBottom();
 	}
@@ -85,16 +113,22 @@ Defaults:
 		currentChatId = newThreadChatId();
 		messages = [];
 		streamBlocks = [];
-		historyOpen = false;
+		composerEl?.focus();
 	}
 
-	async function load() {
+	async function load(wanted: string | null, fresh: boolean) {
 		await loadChatList();
-		if (chats.length > 0) {
-			await openChat(chats[0].id);
-		} else {
-			startNewChat();
+		if (fresh) return startNewChat();
+		let remembered: string | null = null;
+		try {
+			remembered = localStorage.getItem(lastChatKey(thread.id));
+		} catch {
+			// storage unavailable
 		}
+		const pick = [wanted, remembered].find((id) => id && chats.some((c) => c.id === id));
+		if (pick) await openChat(pick);
+		else if (chats.length > 0) await openChat(chats[0].id);
+		else startNewChat();
 	}
 
 	function formatRelative(iso: string): string {
@@ -153,6 +187,7 @@ Defaults:
 		composing = '';
 		if (!currentChatId) currentChatId = newThreadChatId();
 		await appendThreadChat(thread.id, currentChatId, userMsg);
+		rememberChat(currentChatId);
 		await loadChatList();
 		await tick();
 		scrollToBottom();
@@ -175,12 +210,15 @@ Defaults:
 		});
 	}
 
-	onMount(() => {
-		void load();
-	});
+	// Keyed on the id, not the object: the store swaps the thread object on any
+	// edit (e.g. a rename), which must not yank the user out of their chat.
+	const threadId = $derived(thread.id);
 
 	$effect(() => {
-		if (thread.id) void load();
+		void threadId;
+		const wanted = initialChatId;
+		const fresh = startNew;
+		untrack(() => void load(wanted, fresh));
 	});
 
 	onDestroy(() => {
@@ -188,138 +226,153 @@ Defaults:
 	});
 </script>
 
-<div class="relative flex h-full flex-col">
-	<div class="flex items-center justify-between border-b border-border/60 px-3 py-1.5">
-		<div class="truncate text-xs text-muted-foreground" title={currentChatTitle}>
-			{currentChatTitle}
-		</div>
-		<div class="flex items-center gap-1">
+<div class="flex h-full">
+	<aside class="flex w-56 shrink-0 flex-col border-r border-border/60 bg-card lg:w-64" aria-label="Chats">
+		<div class="flex h-9 shrink-0 items-center justify-between border-b border-border/60 pl-3 pr-1.5">
+			<span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Chats</span>
 			<button
 				type="button"
 				class="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
-				title="Chat history"
-				disabled={streaming}
-				onclick={() => (historyOpen = !historyOpen)}
-			>
-				<Clock class="h-3.5 w-3.5" />
-			</button>
-			<button
-				type="button"
-				class="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
-				title="New chat"
+				title={streaming ? 'Wait for the reply to finish' : 'New chat'}
+				aria-label="New chat"
 				disabled={streaming}
 				onclick={startNewChat}
 			>
 				<Plus class="h-3.5 w-3.5" />
 			</button>
 		</div>
-	</div>
-	{#if historyOpen}
-		<div
-			class="absolute right-2 top-9 z-10 max-h-72 w-64 overflow-y-auto rounded-md border border-border/60 bg-card shadow-lg"
-		>
-			{#if chats.length === 0}
-				<div class="px-3 py-2 text-xs text-muted-foreground">No past chats</div>
-			{:else}
-				{#each chats as c (c.id)}
-					<button
-						type="button"
-						class="block w-full border-b border-border/40 px-3 py-1.5 text-left text-xs last:border-b-0 hover:bg-muted {c.id ===
-						currentChatId
-							? 'text-accent'
-							: ''}"
-						onclick={() => openChat(c.id)}
-					>
-						<div class="truncate">{c.title}</div>
-						<div class="text-[10px] text-muted-foreground">{formatRelative(c.updatedAt)}</div>
-					</button>
-				{/each}
+		<nav class="flex-1 space-y-0.5 overflow-y-auto p-1.5">
+			{#if isUnsaved}
+				<div class="rounded-md bg-secondary px-2.5 py-1.5 text-xs text-foreground">
+					<div class="truncate font-medium">New chat</div>
+					<div class="text-[10px] text-muted-foreground">not sent yet</div>
+				</div>
 			{/if}
+			{#each chats as c (c.id)}
+				{@const active = c.id === currentChatId}
+				<button
+					type="button"
+					class={cn(
+						'block w-full rounded-md px-2.5 py-1.5 text-left text-xs transition-colors disabled:cursor-not-allowed',
+						active
+							? 'bg-secondary text-foreground'
+							: 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'
+					)}
+					aria-current={active ? 'true' : undefined}
+					disabled={streaming && !active}
+					onclick={() => void openChat(c.id)}
+				>
+					<div class="truncate font-medium">{c.title}</div>
+					<div class="text-[10px] text-muted-foreground">
+						{formatRelative(c.updatedAt)} · {c.messageCount} message{c.messageCount === 1 ? '' : 's'}
+					</div>
+				</button>
+			{/each}
+			{#if chats.length === 0 && !isUnsaved}
+				<p class="px-2.5 py-2 text-xs text-muted-foreground">No chats yet.</p>
+			{/if}
+		</nav>
+	</aside>
+
+	<section class="flex min-w-0 flex-1 flex-col">
+		<div class="flex h-9 shrink-0 items-center gap-2 border-b border-border/60 px-4">
+			<MessageSquare class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+			<span class="truncate text-xs text-muted-foreground" title={currentChatTitle}>{currentChatTitle}</span>
 		</div>
-	{/if}
-	<div bind:this={scrollRoot} class="flex-1 space-y-3 overflow-y-auto p-3">
-		{#each messages as m (m.createdAt + m.role)}
-			<div class="rounded-md border border-border/40 bg-background/40 p-2">
-				<div class="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
-					{m.role}
-				</div>
-				<div class="chat-md text-xs leading-relaxed">{@html renderMd(m.content)}</div>
-			</div>
-		{/each}
-		{#if streaming}
-			<div class="rounded-md border border-accent/40 bg-accent/5 p-2">
-				<div class="mb-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-accent">
-					<Loader2 class="h-3 w-3 animate-spin" />
-					assistant
-				</div>
-				<div class="space-y-1.5 text-xs leading-relaxed">
-					{#each streamBlocks as block, i (i)}
-						{#if block.kind === 'text'}
-							<div class="chat-md">{@html renderMd(block.text)}</div>
-						{:else if block.kind === 'thinking'}
-							<div class="inline-flex items-center gap-1.5 text-[10px] italic text-muted-foreground/70">
-								<Loader2 class="h-3 w-3 animate-spin" />
-								thinking…
-							</div>
-						{:else if block.kind === 'tool_result'}
-							<div
-								class="ml-4 font-mono text-[10px] {block.isError
-									? 'text-destructive'
-									: 'text-muted-foreground/70'}"
-							>
-								↳ {block.result}
-							</div>
-						{:else}
-							{@const Icon = toolIcon(block.tool)}
-							<div
-								class="inline-flex items-center gap-1.5 rounded border border-border/50 bg-background/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
-							>
-								<Icon class="h-3 w-3" />
-								<span>{toolVerb(block.tool)}</span>
-								{#if block.summary}
-									<span class="text-foreground/80">{block.summary}</span>
-								{/if}
-							</div>
-						{/if}
-					{/each}
-					{#if streamBlocks.length === 0}
-						<div class="text-muted-foreground">
-							… (if this hangs, check the terminal running <code class="font-mono">npm run tauri dev</code>
-							for <code class="font-mono">[chat_stream:…]</code> diagnostic logs)
+		<div bind:this={scrollRoot} class="min-h-0 flex-1 overflow-y-auto">
+			<div class="mx-auto max-w-3xl space-y-3 px-4 py-4">
+				{#each messages as m (m.createdAt + m.role)}
+					<div
+						class={cn(
+							'rounded-md border p-3',
+							m.role === 'user' ? 'border-border/60 bg-secondary/40' : 'border-border/40 bg-background/40'
+						)}
+					>
+						<div class="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+							{m.role}
 						</div>
-					{/if}
+						<div class="chat-md text-sm leading-relaxed">{@html renderMd(m.content)}</div>
+					</div>
+				{/each}
+				{#if streaming}
+					<div class="rounded-md border border-accent/40 bg-accent/5 p-3">
+						<div class="mb-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-accent">
+							<Loader2 class="h-3 w-3 animate-spin" />
+							assistant
+						</div>
+						<div class="space-y-1.5 text-sm leading-relaxed">
+							{#each streamBlocks as block, i (i)}
+								{#if block.kind === 'text'}
+									<div class="chat-md">{@html renderMd(block.text)}</div>
+								{:else if block.kind === 'thinking'}
+									<div class="inline-flex items-center gap-1.5 text-[10px] italic text-muted-foreground/70">
+										<Loader2 class="h-3 w-3 animate-spin" />
+										thinking…
+									</div>
+								{:else if block.kind === 'tool_result'}
+									<div
+										class="ml-4 font-mono text-[10px] {block.isError
+											? 'text-destructive'
+											: 'text-muted-foreground/70'}"
+									>
+										↳ {block.result}
+									</div>
+								{:else}
+									{@const Icon = toolIcon(block.tool)}
+									<div
+										class="inline-flex items-center gap-1.5 rounded border border-border/50 bg-background/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+									>
+										<Icon class="h-3 w-3" />
+										<span>{toolVerb(block.tool)}</span>
+										{#if block.summary}
+											<span class="text-foreground/80">{block.summary}</span>
+										{/if}
+									</div>
+								{/if}
+							{/each}
+							{#if streamBlocks.length === 0}
+								<div class="text-xs text-muted-foreground">
+									… (if this hangs, check the terminal running <code class="font-mono">npm run tauri dev</code>
+									for <code class="font-mono">[chat_stream:…]</code> diagnostic logs)
+								</div>
+							{/if}
+						</div>
+					</div>
+				{/if}
+				{#if messages.length === 0 && !streaming}
+					<p class="px-2 py-12 text-center text-sm text-muted-foreground">
+						Ask Claude about this thread.
+					</p>
+				{/if}
+			</div>
+		</div>
+		<div class="shrink-0 border-t border-border/60">
+			<div class="mx-auto max-w-3xl p-3">
+				<Textarea
+					bind:ref={composerEl}
+					bind:value={composing}
+					placeholder="Ask about this thread… (⌘↩ to send)"
+					rows={3}
+					class="resize-none text-sm"
+					onkeydown={(e: KeyboardEvent) => {
+						if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+							e.preventDefault();
+							void send();
+						}
+					}}
+				/>
+				<div class="mt-2 flex flex-wrap items-center justify-end gap-2 sm:justify-between">
+					<span class="hidden min-w-0 flex-1 truncate text-[10px] text-muted-foreground sm:block">
+						Powered by your local <code class="font-mono">claude</code> CLI · skills enabled · navigates thread folder
+					</span>
+					<Button size="sm" onclick={send} disabled={streaming || !composing.trim()}>
+						<Send class="h-3.5 w-3.5" />
+						Send
+					</Button>
 				</div>
 			</div>
-		{/if}
-		{#if messages.length === 0 && !streaming}
-			<p class="px-2 py-8 text-center text-xs text-muted-foreground">
-				Ask Claude about this thread.
-			</p>
-		{/if}
-	</div>
-	<div class="border-t border-border/60 p-2">
-		<Textarea
-			bind:value={composing}
-			placeholder="Ask about this thread… (⌘↩ to send)"
-			rows={2}
-			class="resize-none text-xs"
-			onkeydown={(e: KeyboardEvent) => {
-				if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-					e.preventDefault();
-					void send();
-				}
-			}}
-		/>
-		<div class="mt-2 flex flex-wrap items-center justify-end gap-2 sm:justify-between">
-			<span class="hidden min-w-0 flex-1 truncate text-[10px] text-muted-foreground sm:block">
-				Powered by your local <code class="font-mono">claude</code> CLI · skills enabled · navigates thread folder
-			</span>
-			<Button size="sm" onclick={send} disabled={streaming || !composing.trim()}>
-				<Send class="h-3.5 w-3.5" />
-				Send
-			</Button>
 		</div>
-	</div>
+	</section>
 </div>
 
 <style>

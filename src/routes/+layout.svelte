@@ -14,6 +14,7 @@
 	import BulkSummaryModal from '$lib/components/BulkSummaryModal.svelte';
 	import FirstRunWizard from '$lib/components/FirstRunWizard.svelte';
 	import { syncExternalChanges } from '$lib/tauri/external-sync';
+	import { notesSync } from '$lib/stores/notes.svelte';
 
 	let { children } = $props();
 	let booting = $state(true);
@@ -27,9 +28,9 @@
 		if (syncing || !papers.loaded) return;
 		syncing = true;
 		try {
-			if (await syncExternalChanges()) {
-				await Promise.all([papers.reload(), threads.reload()]);
-			}
+			const { stale, changed } = await syncExternalChanges();
+			if (changed) await Promise.all([papers.reload(), threads.reload()]);
+			if (stale) notesSync.revision++;
 		} catch (e) {
 			console.error('[reos] external sync failed', e);
 		} finally {
@@ -69,10 +70,12 @@
 		const path = page.url.pathname;
 		const paperChatMatch = path.match(/^\/paper\/([^/]+)\/chat$/);
 		const threadChatMatch = path.match(/^\/threads\/([^/]+)\/chat$/);
+		const noteMatch = path.match(/^\/threads\/([^/]+)\/notes\/([^/]+)$/);
 		const paperMatch = path.match(/^\/paper\/([^/]+)$/);
 		const threadMatch = path.match(/^\/threads\/([^/]+)$/);
 		if (paperChatMatch) ui.activeTab = { kind: 'paper-chat', id: paperChatMatch[1] };
 		else if (threadChatMatch) ui.activeTab = { kind: 'thread-chat', id: threadChatMatch[1] };
+		else if (noteMatch) ui.activeTab = { kind: 'note', id: `${noteMatch[1]}/${noteMatch[2]}` };
 		else if (paperMatch) ui.activeTab = { kind: 'paper', id: paperMatch[1] };
 		else if (threadMatch) ui.activeTab = { kind: 'thread', id: threadMatch[1] };
 		else ui.activeTab = null;

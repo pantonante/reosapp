@@ -347,7 +347,19 @@ export type TabRef =
 	| { kind: 'paper'; id: string; temporary?: boolean }
 	| { kind: 'thread'; id: string; temporary?: boolean }
 	| { kind: 'paper-chat'; id: string; temporary?: boolean }
-	| { kind: 'thread-chat'; id: string; temporary?: boolean };
+	| { kind: 'thread-chat'; id: string; temporary?: boolean }
+	// id is `<threadId>/<noteId>`; the title is cached on the ref because notes
+	// live on disk only (no store), so restored tabs can label themselves.
+	| { kind: 'note'; id: string; title?: string; temporary?: boolean };
+
+export function noteTabId(threadId: string, noteId: string): string {
+	return `${threadId}/${noteId}`;
+}
+
+export function noteTabPath(id: string): string {
+	const slash = id.indexOf('/');
+	return `/threads/${id.slice(0, slash)}/notes/${id.slice(slash + 1)}`;
+}
 
 export type MainView = 'pdf' | 'summary' | 'chat';
 
@@ -598,9 +610,12 @@ export const ui = (() => {
 		closeThread(id: string): string | null {
 			const idx = tabOrder.findIndex((t) => t.kind === 'thread' && t.id === id);
 			if (idx === -1) return null;
-			// Drop the thread tab and any chat tab attached to it.
+			// Drop the thread tab and any chat/note tabs attached to it.
 			tabOrder = tabOrder.filter(
-				(t, i) => i !== idx && !(t.kind === 'thread-chat' && t.id === id)
+				(t, i) =>
+					i !== idx &&
+					!(t.kind === 'thread-chat' && t.id === id) &&
+					!(t.kind === 'note' && t.id.startsWith(`${id}/`))
 			);
 			persistTabs();
 			if (activeThreadId === id) {
@@ -614,6 +629,27 @@ export const ui = (() => {
 		closeAllThreads() {
 			tabOrder = tabOrder.filter((t) => t.kind !== 'thread' && t.kind !== 'thread-chat');
 			activeThreadId = null;
+			persistTabs();
+		},
+		openNote(threadId: string, noteId: string, title: string, opts?: { newTab?: boolean }) {
+			placeTab({ kind: 'note', id: noteTabId(threadId, noteId), title }, opts);
+		},
+		/** Keep a note tab's cached label in sync after a rename. */
+		setNoteTitle(threadId: string, noteId: string, title: string) {
+			const id = noteTabId(threadId, noteId);
+			let changed = false;
+			tabOrder = tabOrder.map((t) => {
+				if (t.kind !== 'note' || t.id !== id || t.title === title) return t;
+				changed = true;
+				return { ...t, title };
+			});
+			if (changed) persistTabs();
+		},
+		closeNote(threadId: string, noteId: string) {
+			const id = noteTabId(threadId, noteId);
+			const next = tabOrder.filter((t) => !(t.kind === 'note' && t.id === id));
+			if (next.length === tabOrder.length) return;
+			tabOrder = next;
 			persistTabs();
 		},
 		openThreadChat(id: string) {
