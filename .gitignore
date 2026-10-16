@@ -19,3 +19,5 @@ mcp/dist
 
 # CodeGraph local index
 .codegraph/
+
+__pycache__/
