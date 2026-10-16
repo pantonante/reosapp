@@ -4,7 +4,9 @@
 	import markedKatex from 'marked-katex-extension';
 	import { Button } from '$lib/components/ui';
 	import type { Paper } from '$lib/types';
-	import { INBOX_SLUG, readPaperSummary } from '$lib/tauri/fs';
+	import { join } from '@tauri-apps/api/path';
+	import { INBOX_SLUG, paperDir, readPaperSummary } from '$lib/tauri/fs';
+	import { loadMediaBlobUrl } from '$lib/tauri/notes';
 	import { toolIcon, toolVerb } from '$lib/tauri/stream';
 	import { parseSummaryFrontmatter, isMetaEmpty } from '$lib/summary-meta';
 	import {
@@ -39,6 +41,105 @@
 
 	let lastReloadAt = $state<number>(0);
 
+	// Figures the summarize skill crops into `<paper>/figures/` are referenced
+	// by relative path. The webview can't load those by URL, so `src` moves to
+	// `data-summary-src` before the HTML hits the DOM and is swapped for a blob
+	// URL once the bytes are read (same approach as NoteMarkdown).
+	let summaryEl = $state<HTMLDivElement | null>(null);
+	let figureUrls = new Map<string, Promise<string>>();
+
+	// Element children of `el`, plus any non-blank text (so a paragraph with
+	// prose around its image doesn't count as a figure).
+	function contentNodes(el: Element): Node[] {
+		return [...el.childNodes].filter(
+			(n) => n.nodeName !== 'BR' && !(n.nodeType === Node.TEXT_NODE && !n.textContent?.trim())
+		);
+	}
+
+	function isCaption(nodes: Node[]): boolean {
+		return nodes.length === 1 && nodes[0].nodeName === 'EM';
+	}
+
+	function prepareSummaryHtml(html: string): string {
+		const tpl = document.createElement('template');
+		tpl.innerHTML = html;
+		for (const img of tpl.content.querySelectorAll('img[src]')) {
+			const src = img.getAttribute('src') ?? '';
+			if (/^(https?:|data:|blob:)/i.test(src)) continue;
+			img.setAttribute('data-summary-src', src);
+			img.removeAttribute('src');
+		}
+		// The skill writes `![..](figures/x.png)` with an italic takeaway line
+		// under it. Without a blank line between them markdown puts both in one
+		// paragraph, so the caption would flow beside the image. Rebuild either
+		// form (same paragraph, or caption in the next one) as a <figure>.
+		for (const p of [...tpl.content.querySelectorAll('p')]) {
+			const [img, ...rest] = contentNodes(p);
+			if (img?.nodeName !== 'IMG') continue;
+			let caption: Node | null = null;
+			if (isCaption(rest)) {
+				caption = rest[0];
+			} else if (rest.length > 0) {
+				continue;
+			} else {
+				const next = p.nextElementSibling;
+				if (next?.nodeName === 'P' && isCaption(contentNodes(next))) {
+					caption = contentNodes(next)[0];
+					next.remove();
+				}
+			}
+			const figure = document.createElement('figure');
+			figure.className = 'summary-figure';
+			figure.append(img);
+			if (caption) {
+				const figcaption = document.createElement('figcaption');
+				figcaption.append(...caption.childNodes);
+				figure.append(figcaption);
+			}
+			p.replaceWith(figure);
+		}
+		return tpl.innerHTML;
+	}
+
+	function releaseFigures() {
+		for (const url of figureUrls.values()) url.then(URL.revokeObjectURL, () => {});
+		figureUrls = new Map();
+	}
+
+	function figureUrl(path: string): Promise<string> {
+		let url = figureUrls.get(path);
+		if (!url) {
+			url = loadMediaBlobUrl(path);
+			figureUrls.set(path, url);
+			url.catch(() => figureUrls.delete(path));
+		}
+		return url;
+	}
+
+	$effect(() => {
+		void summaryHtml;
+		if (!summaryEl) return;
+		const urls = figureUrls;
+		const imgs = summaryEl.querySelectorAll<HTMLImageElement>('img[data-summary-src]');
+		if (imgs.length === 0) return;
+		void (async () => {
+			const dir = await paperDir(paper.threadId ?? INBOX_SLUG, paper.arxivId);
+			for (const img of imgs) {
+				const src = decodeURIComponent(img.dataset.summarySrc!.replace(/^file:\/\//i, ''));
+				const path = src.startsWith('/') ? src : await join(dir, src.replace(/^\.\//, ''));
+				try {
+					const url = await figureUrl(path);
+					// A reload may have replaced the cache while we awaited.
+					if (urls === figureUrls) img.src = url;
+				} catch (err) {
+					img.classList.add('summary-figure-missing');
+					img.title = `Missing figure: ${src}`;
+					console.warn('[reos] summary figure failed to load', path, err);
+				}
+			}
+		})();
+	});
+
 	const job: SummaryJob | undefined = $derived(getJob(paper.id));
 	const streaming = $derived(job?.status === 'streaming');
 	const jobError = $derived(job?.status === 'error' ? job : null);
@@ -59,15 +160,19 @@
 
 	onDestroy(() => {
 		if (tickInterval != null) clearInterval(tickInterval);
+		releaseFigures();
 	});
 
 	async function load() {
 		loaded = false;
+		// A regenerated summary rewrites figures under the same names, so
+		// cached blobs would show the old crops.
+		releaseFigures();
 		summary = await readPaperSummary(paper.threadId ?? INBOX_SLUG, paper.arxivId);
 		if (summary) {
 			const { meta, body } = parseSummaryFrontmatter(summary);
 			summaryFrontmatter = isMetaEmpty(meta) ? null : meta;
-			summaryHtml = await marked.parse(body);
+			summaryHtml = prepareSummaryHtml(await marked.parse(body));
 		} else {
 			summaryFrontmatter = null;
 			summaryHtml = '';
@@ -278,7 +383,7 @@
 			</Button>
 		</div>
 		<div class="flex-1 overflow-y-auto px-6 py-8 sm:px-10">
-			<div class="summary-md mx-auto">
+			<div class="summary-md mx-auto" bind:this={summaryEl}>
 				{#if summaryFrontmatter}
 					<div class="summary-meta mb-6 space-y-2">
 						{#if summaryFrontmatter.topics.length}
@@ -563,6 +668,43 @@
 	.summary-meta :global(.chip-keyword) {
 		background: transparent;
 		color: hsl(var(--muted-foreground));
+	}
+
+	/* Figures cropped from the paper, rebuilt as <figure> by
+	   prepareSummaryHtml. White backing keeps PDF crops (drawn for paper)
+	   legible in dark mode. */
+	.summary-md :global(figure.summary-figure) {
+		margin: 1.75rem 0;
+		text-align: center;
+	}
+	.summary-md :global(figure.summary-figure img) {
+		display: block;
+		margin-inline: auto;
+		max-width: 100%;
+		max-height: 75vh;
+		border-radius: 6px;
+		border: 1px solid hsl(var(--border) / 0.6);
+		background: white;
+		padding: 0.5rem;
+	}
+	.summary-md :global(figure.summary-figure figcaption) {
+		max-width: 68ch;
+		margin: 0.6rem auto 0;
+		font-size: 0.85em;
+		font-style: italic;
+		line-height: 1.55;
+		color: hsl(var(--muted-foreground));
+	}
+	/* An image the author left inside a prose paragraph. */
+	.summary-md :global(p img) {
+		max-width: 100%;
+		border-radius: 4px;
+	}
+	.summary-md :global(.summary-figure-missing) {
+		min-height: 3rem;
+		min-width: 8rem;
+		border-style: dashed;
+		background: hsl(var(--muted) / 0.4);
 	}
 
 	/* KaTeX: give display math room to breathe and align it visually with prose. */

@@ -1,6 +1,7 @@
 ---
 name: summarize-paper
-description: Use whenever the user asks to summarize, digest, distill, review, or break down a research paper. Reads `paper.pdf` from the current working directory and writes a builder-oriented summary to `summary.md` in the same directory. Trigger this skill on prompts like "summarize this paper", "review this paper", "what does this paper actually do", or "break down this paper".
+description: Use whenever the user asks to summarize, digest, distill, review, or break down a research paper. Reads `paper.pdf` from the current working directory and writes a builder-oriented summary to `summary.md` in the same directory, with the paper's key figures and tables cropped into `figures/`. Trigger this skill on prompts like "summarize this paper", "review this paper", "what does this paper actually do", or "break down this paper".
+allowed-tools: Read, Write, Bash(python3 *), Bash(mkdir *)
 ---
 
 # Paper Reviewer
@@ -190,11 +191,45 @@ In 2-4 sentences: does this paper change how a practitioner should think about t
 - When referencing specific numbers from the paper, include the table/figure number for traceability
 - If the paper references code or models, note whether they're actually available
 - Keep the whole summary to roughly 800-1500 words depending on paper complexity — long enough to be useful, short enough to be worth reading over the paper itself
+- **Figures and tables**: embed the crops from Step 4 right where the prose discusses them (see Step 4 for the syntax). Don't stack them all at the top or bottom.
 - **Math formulas**: The summary is rendered with KaTeX. Use LaTeX math syntax: `$...$` for inline math and `$$...$$` for display math. For example, write `$\mathcal{O}(n \log n)$` for inline complexity, or `$$\mathcal{L} = \sum_{i=1}^{N} \ell(y_i, \hat{y}_i)$$` for a display equation. Always use proper LaTeX commands (`\mathbb`, `\mathcal`, `\sum`, `\frac`, `\in`, `\rightarrow`, Greek letters like `\alpha`, `\beta`, etc.) instead of plain-text approximations. Do not use Unicode math symbols when LaTeX equivalents exist.
 
-## Step 4: Save it
+## Step 4: Extract the key figures and tables
 
-Write the full summary to `summary.md` in the current working directory using the Write tool — that's the same directory `paper.pdf` lives in. If `summary.md` already exists, overwrite it.
+A good summary shows the paper's one or two most important pictures — the architecture diagram, the headline results table, the plot that proves (or undercuts) the claim — instead of only describing them. Pick **2–5** visuals that a reader of your summary actually needs. Skip decorative teasers, qualitative sample grids (unless the paper is about generation quality), and appendix material.
+
+A helper script ships with this skill at `scripts/figures.py` (relative to this skill's base directory; call it with the absolute path). It needs poppler (`pdftotext`, `pdftoppm`). If it fails because they're missing, skip this step and write the summary without images.
+
+1. **Locate captions.** Run:
+
+   ```sh
+   python3 <skill-dir>/scripts/figures.py captions paper.pdf
+   ```
+
+   It prints one JSON line per figure/table: `page`, `kind`, `number`, `caption`, and `suggestedBox` — a crop box `[x0, y0, x1, y1]` in PDF points (origin top-left) that excludes the caption itself.
+
+2. **Crop each pick** to `figures/`, named by kind and the paper's own number (`fig-3.png`, `table-2.png`):
+
+   ```sh
+   python3 <skill-dir>/scripts/figures.py crop paper.pdf <page> <x0> <y0> <x1> <y1> figures/fig-3.png
+   ```
+
+3. **Look at every crop with the Read tool before using it.** The suggested box is a layout heuristic and is sometimes wrong: it can cut off part of the figure, include a neighbouring paragraph or section heading, or (for tables) grab the wrong side of the caption. If a crop is off, render the whole page with `figures.py page paper.pdf <page> figures/_page.png` and Read it — it renders at 72 dpi, so pixel coordinates equal PDF points — read off better coordinates, and re-crop. Never embed a crop you haven't checked.
+
+4. **Embed** each one in `summary.md` where the prose discusses it, as a markdown image followed by an italic caption line in your own words saying what to take away (not the paper's full caption):
+
+   ```markdown
+   ![Figure 3: Diffusion vs. OT trajectories](figures/fig-3.png)
+   *Figure 3 — OT paths move in straight lines, which is why sampling needs fewer steps.*
+   ```
+
+   Use the relative path `figures/...` exactly — the app resolves it against the paper folder.
+
+Tables: still transcribe the handful of numbers you discuss into prose or a small markdown table when you are comparing them — the image is for fidelity, the text is for the argument. When a table is too large to be worth transcribing, the cropped image alone is fine.
+
+## Step 5: Save it
+
+Write the full summary to `summary.md` in the current working directory using the Write tool — that's the same directory `paper.pdf` lives in. If `summary.md` already exists, overwrite it. Images live in `figures/` next to it; re-running overwrites crops with the same names.
 
 The file **must begin with the YAML frontmatter block from Step 0**, then a blank line, then the prose template body. Skipping the frontmatter means the paper won't show up on the graph view.
 

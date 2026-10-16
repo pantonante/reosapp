@@ -53,7 +53,9 @@ Layout:
     paper.pdf              — full PDF (readable with the Read tool)
     summary.md             — generated summary with YAML frontmatter
                              (topics / domains / keywords)
-    notes.md               — user's freeform notes (may be missing)
+    figures/               — key figures/tables cropped from the PDF, embedded
+                             in summary.md as ![](figures/<file>.png)
+    notes.md              — user's freeform notes (may be missing)
     chats/<id>.jsonl       — prior per-paper conversations
 
 Defaults:
