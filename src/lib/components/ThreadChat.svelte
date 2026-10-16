@@ -1,7 +1,7 @@
 <script lang="ts">
 	import 'katex/dist/katex.min.css';
 	import { Marked } from 'marked';
-	import markedKatex from 'marked-katex-extension';
+	import { katexExtension } from '$lib/utils/markdown-katex';
 	import { Button, Textarea } from '$lib/components/ui';
 	import type { ChatMessage, ChatSummary, Thread } from '$lib/types';
 	import {
@@ -65,7 +65,7 @@ Defaults:
   - When you produce artifacts (synthesis edits, comparison tables), write them into the thread folder using meaningful filenames. When the user asks for a note, write it to notes/ in the format above so it shows up in the app.`;
 
 	const marked = new Marked({ async: false });
-	marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
+	marked.use(katexExtension());
 
 	function renderMd(text: string): string {
 		return marked.parse(text) as string;

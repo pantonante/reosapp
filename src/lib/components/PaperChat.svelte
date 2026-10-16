@@ -1,7 +1,7 @@
 <script lang="ts">
 	import 'katex/dist/katex.min.css';
 	import { Marked } from 'marked';
-	import markedKatex from 'marked-katex-extension';
+	import { katexExtension } from '$lib/utils/markdown-katex';
 	import { Button, Textarea } from '$lib/components/ui';
 	import type { ChatMessage, ChatSummary, Paper } from '$lib/types';
 	import {
@@ -27,7 +27,7 @@
 	let { paper }: { paper: Paper } = $props();
 
 	const marked = new Marked({ async: false });
-	marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
+	marked.use(katexExtension());
 
 	function renderMd(text: string): string {
 		return marked.parse(text) as string;

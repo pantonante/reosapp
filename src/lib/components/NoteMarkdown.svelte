@@ -1,7 +1,7 @@
 <script lang="ts">
 	import 'katex/dist/katex.min.css';
 	import { Marked } from 'marked';
-	import markedKatex from 'marked-katex-extension';
+	import { katexExtension } from '$lib/utils/markdown-katex';
 	import { onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { isVideoPath, PAPER_LINK_SCHEME } from '$lib/note-format';
@@ -16,7 +16,7 @@
 	}
 
 	const marked = new Marked({ async: false });
-	marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
+	marked.use(katexExtension());
 	// Markdown has no video syntax: `![caption](clip.mp4)` renders as a player.
 	marked.use({
 		renderer: {

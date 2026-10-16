@@ -1,7 +1,7 @@
 <script lang="ts">
 	import 'katex/dist/katex.min.css';
 	import { Marked } from 'marked';
-	import markedKatex from 'marked-katex-extension';
+	import { katexExtension } from '$lib/utils/markdown-katex';
 	import { Button } from '$lib/components/ui';
 	import type { Paper } from '$lib/types';
 	import { join } from '@tauri-apps/api/path';
@@ -30,7 +30,7 @@
 	let { paper }: { paper: Paper } = $props();
 
 	const marked = new Marked();
-	marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
+	marked.use(katexExtension());
 
 	let summary = $state<string | null>(null);
 	let summaryHtml = $state<string>('');
