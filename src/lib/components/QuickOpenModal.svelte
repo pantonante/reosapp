@@ -30,7 +30,7 @@
 
 <DialogPrimitive.Root bind:open={ui.quickOpenOpen}>
 	<DialogPrimitive.Portal>
-		<DialogPrimitive.Overlay class="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" />
+		<DialogPrimitive.Overlay class="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs" />
 		<DialogPrimitive.Content
 			class="fixed left-1/2 top-[20vh] z-50 w-full max-w-xl -translate-x-1/2 overflow-hidden rounded-lg border border-border/60 bg-card shadow-2xl"
 		>
@@ -38,7 +38,7 @@
 				<Command.Input
 					bind:value
 					placeholder="Open paper or thread…"
-					class="w-full border-0 border-b border-border/60 bg-transparent px-4 py-3 text-sm focus:outline-none"
+					class="w-full border-0 border-b border-border/60 bg-transparent px-4 py-3 text-sm focus:outline-hidden"
 				/>
 				<Command.List class="max-h-80 overflow-y-auto p-1">
 					<Command.Empty class="px-4 py-8 text-center text-sm text-muted-foreground">
@@ -59,7 +59,7 @@
 												ui.openPaper(paper.id);
 												goto(`/paper/${paper.id}`);
 											})}
-										class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-foreground data-[selected]:bg-accent/15 data-[selected]:text-accent"
+										class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-foreground data-selected:bg-accent/15 data-selected:text-accent"
 									>
 										<FileText class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 										<span class="truncate">{paper.title}</span>
@@ -86,7 +86,7 @@
 												ui.openThread(thread.id);
 												goto(`/threads/${thread.id}`);
 											})}
-										class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-foreground data-[selected]:bg-accent/15 data-[selected]:text-accent"
+										class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-foreground data-selected:bg-accent/15 data-selected:text-accent"
 									>
 										<Layers class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 										<span class="truncate">{thread.title}</span>

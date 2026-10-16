@@ -300,7 +300,7 @@
 				{#if stderrExpanded}
 					{#if job.stderr.length > 0}
 						<pre
-							class="max-h-40 overflow-auto whitespace-pre-wrap break-words border-t border-border/40 px-2 py-1 font-mono text-[10px] text-muted-foreground">{job.stderr.join('\n')}</pre>
+							class="max-h-40 overflow-auto whitespace-pre-wrap wrap-break-word border-t border-border/40 px-2 py-1 font-mono text-[10px] text-muted-foreground">{job.stderr.join('\n')}</pre>
 					{:else}
 						<div
 							class="border-t border-border/40 px-2 py-1 text-[10px] text-muted-foreground"
@@ -330,7 +330,7 @@
 				<div
 					class="rounded border border-destructive/40 bg-destructive/5 p-2 font-mono text-[11px] text-destructive"
 				>
-					<pre class="whitespace-pre-wrap break-words">{jobError.error}</pre>
+					<pre class="whitespace-pre-wrap wrap-break-word">{jobError.error}</pre>
 				</div>
 			{/if}
 			{#if jobError.blocks.length > 0}
@@ -370,7 +370,7 @@
 						stderr
 					</div>
 					<pre
-						class="max-h-60 overflow-auto whitespace-pre-wrap break-words border-t border-border/40 px-2 py-1 font-mono text-[10px] text-muted-foreground">{jobError.stderr.join('\n')}</pre>
+						class="max-h-60 overflow-auto whitespace-pre-wrap wrap-break-word border-t border-border/40 px-2 py-1 font-mono text-[10px] text-muted-foreground">{jobError.stderr.join('\n')}</pre>
 				</div>
 			{/if}
 		</div>

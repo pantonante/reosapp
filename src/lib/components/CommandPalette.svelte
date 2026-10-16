@@ -62,7 +62,7 @@
 
 <DialogPrimitive.Root bind:open={ui.commandPaletteOpen}>
 	<DialogPrimitive.Portal>
-		<DialogPrimitive.Overlay class="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm" />
+		<DialogPrimitive.Overlay class="fixed inset-0 z-40 bg-black/70 backdrop-blur-xs" />
 		<DialogPrimitive.Content
 			class="panel fixed left-1/2 top-[20vh] z-50 w-full max-w-xl -translate-x-1/2 overflow-hidden"
 		>
@@ -70,7 +70,7 @@
 				<Command.Input
 					bind:value
 					placeholder="Search commands…"
-					class="w-full border-0 border-b border-border/60 bg-transparent px-4 py-3 text-sm focus:outline-none"
+					class="w-full border-0 border-b border-border/60 bg-transparent px-4 py-3 text-sm focus:outline-hidden"
 				/>
 				<Command.List class="max-h-80 overflow-y-auto p-1">
 					<Command.Empty class="px-4 py-8 text-center text-sm text-muted-foreground">
@@ -87,7 +87,7 @@
 								<Command.Item
 									value={`nav:${action.label}`}
 									onSelect={() => run(action.run)}
-									class="flex cursor-pointer items-center gap-2 rounded-[8px] px-2 py-1.5 text-sm text-foreground data-[selected]:bg-secondary data-[selected]:text-foreground"
+									class="flex cursor-pointer items-center gap-2 rounded-[8px] px-2 py-1.5 text-sm text-foreground data-selected:bg-secondary data-selected:text-foreground"
 								>
 									<Icon class="h-3.5 w-3.5" />
 									{action.label}
@@ -106,7 +106,7 @@
 								<Command.Item
 									value={`cmd:${action.label}`}
 									onSelect={() => run(action.run)}
-									class="flex cursor-pointer items-center gap-2 rounded-[8px] px-2 py-1.5 text-sm text-foreground data-[selected]:bg-secondary data-[selected]:text-foreground"
+									class="flex cursor-pointer items-center gap-2 rounded-[8px] px-2 py-1.5 text-sm text-foreground data-selected:bg-secondary data-selected:text-foreground"
 								>
 									<Icon class="h-3.5 w-3.5" />
 									{action.label}

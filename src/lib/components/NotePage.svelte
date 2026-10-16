@@ -287,7 +287,7 @@
 			{#if mode === 'edit'}
 				<div class="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col px-6 py-6 sm:px-10">
 					<input
-						class="w-full shrink-0 bg-transparent font-mono text-2xl font-light tracking-tight text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
+						class="w-full shrink-0 bg-transparent font-mono text-2xl font-light tracking-tight text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden"
 						placeholder="Note title"
 						bind:this={titleInput}
 						bind:value={title}

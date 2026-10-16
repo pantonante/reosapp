@@ -470,7 +470,7 @@
 		{/if}
 
 		{#if legend.length > 0}
-			<div class="panel pointer-events-none absolute bottom-3 left-3 max-w-xs p-2 backdrop-blur">
+			<div class="panel pointer-events-none absolute bottom-3 left-3 max-w-xs p-2 backdrop-blur-sm">
 				<div class="text-[10px] uppercase tracking-wider text-muted-foreground">
 					{colorMode === 'domain' ? 'Domains' : 'Topics'}
 				</div>

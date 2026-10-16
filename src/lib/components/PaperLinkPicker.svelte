@@ -53,7 +53,7 @@
 	}}
 >
 	<DialogPrimitive.Portal>
-		<DialogPrimitive.Overlay class="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" />
+		<DialogPrimitive.Overlay class="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs" />
 		<DialogPrimitive.Content
 			class="fixed left-1/2 top-[20vh] z-50 w-full max-w-xl -translate-x-1/2 overflow-hidden rounded-lg border border-border/60 bg-card shadow-2xl"
 		>
@@ -61,7 +61,7 @@
 				<Command.Input
 					bind:value={query}
 					placeholder="Link a paper — search title, author, or ID…"
-					class="w-full border-0 border-b border-border/60 bg-transparent px-4 py-3 text-sm focus:outline-none"
+					class="w-full border-0 border-b border-border/60 bg-transparent px-4 py-3 text-sm focus:outline-hidden"
 				/>
 				<Command.List class="max-h-80 overflow-y-auto p-1">
 					<Command.Empty class="px-4 py-8 text-center text-sm text-muted-foreground">
@@ -71,7 +71,7 @@
 						<Command.Item
 							value={p.id}
 							onSelect={() => pick(p)}
-							class="flex cursor-pointer flex-col gap-0.5 rounded px-3 py-2 text-sm text-foreground data-[selected]:bg-accent/15"
+							class="flex cursor-pointer flex-col gap-0.5 rounded px-3 py-2 text-sm text-foreground data-selected:bg-accent/15"
 						>
 							<span class="paper-title line-clamp-1 font-medium">{@html renderTitleHtml(p.title)}</span>
 							<span class="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">

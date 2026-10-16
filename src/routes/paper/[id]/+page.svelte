@@ -443,7 +443,7 @@
 						</button>
 					{/if}
 					{#if metaFill}
-						<span class="flex max-w-[22rem] items-center gap-1 truncate px-2 text-[11px] text-muted-foreground" aria-live="polite">
+						<span class="flex max-w-88 items-center gap-1 truncate px-2 text-[11px] text-muted-foreground" aria-live="polite">
 							{#if metaFill.state === 'running'}
 								<Loader2 class="h-3 w-3 shrink-0 animate-spin" />
 								Reading details from the PDF…
@@ -661,7 +661,7 @@
 											onblur={saveAbstract}
 											placeholder="What is this page about?"
 											rows="5"
-											class="mt-2 w-full resize-none rounded-md border border-border/60 bg-secondary/30 px-2 py-1.5 text-xs leading-relaxed text-foreground placeholder:text-muted-foreground focus:border-border focus:outline-none focus:ring-1 focus:ring-ring"
+											class="mt-2 w-full resize-none rounded-md border border-border/60 bg-secondary/30 px-2 py-1.5 text-xs leading-relaxed text-foreground placeholder:text-muted-foreground focus:border-border focus:outline-hidden focus:ring-1 focus:ring-ring"
 										></textarea>
 									</div>
 								{:else if paper.abstract}

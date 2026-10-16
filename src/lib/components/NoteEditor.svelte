@@ -191,7 +191,7 @@
 	bind:this={textarea}
 	bind:value={content}
 	class={cn(
-		'block h-full w-full resize-none bg-transparent font-mono text-[13px] leading-relaxed text-foreground placeholder:text-muted-foreground/60 focus:outline-none',
+		'block h-full w-full resize-none bg-transparent font-mono text-[13px] leading-relaxed text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden',
 		dragOver && 'rounded-md bg-accent/5 ring-2 ring-accent/40'
 	)}
 	placeholder="Write in markdown. Type [[ to link a paper; paste or drop images and videos to embed them."

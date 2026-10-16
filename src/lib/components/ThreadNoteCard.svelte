@@ -72,7 +72,7 @@
 		class={cn(
 			'flex shrink-0 items-center rounded-md opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100',
 			overlay && 'absolute right-1.5 top-1.5',
-			overlay && thumbUrl && 'bg-card/90 shadow-sm'
+			overlay && thumbUrl && 'bg-card/90 shadow-xs'
 		)}
 	>
 		<button

@@ -281,7 +281,7 @@
 						created {thread.createdAt.slice(0, 10)}
 					</span>
 					<input
-						class="w-full bg-transparent font-mono text-2xl font-light tracking-tight text-foreground focus:outline-none"
+						class="w-full bg-transparent font-mono text-2xl font-light tracking-tight text-foreground focus:outline-hidden"
 						value={thread.title}
 						onblur={(e) => threads.update(thread.id, { title: e.currentTarget.value })}
 					/>
@@ -358,7 +358,7 @@
 				</div>
 			</div>
 			<textarea
-				class="w-full resize-none bg-transparent text-sm text-muted-foreground focus:outline-none"
+				class="w-full resize-none bg-transparent text-sm text-muted-foreground focus:outline-hidden"
 				placeholder="What question does this thread explore?"
 				value={thread.question}
 				rows={2}
@@ -367,7 +367,7 @@
 		</header>
 
 		{#if ancestors.length > 0}
-			<nav class="!mt-2 flex flex-wrap items-center gap-1 text-xs text-muted-foreground" aria-label="Thread ancestors">
+			<nav class="mt-2! flex flex-wrap items-center gap-1 text-xs text-muted-foreground" aria-label="Thread ancestors">
 				{#each ancestors as a (a.id)}
 					<button
 						type="button"
@@ -382,7 +382,7 @@
 			</nav>
 		{/if}
 
-		<section class="!mt-2 flex flex-wrap items-center gap-1.5" aria-label="Sub-threads">
+		<section class="mt-2! flex flex-wrap items-center gap-1.5" aria-label="Sub-threads">
 			<span class="mr-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
 				Sub-threads
 			</span>
@@ -586,7 +586,7 @@
 								{papersByStatus(col.status).length}
 							</span>
 						</h3>
-						<div class="min-h-[3rem] space-y-2">
+						<div class="min-h-12 space-y-2">
 							{#each papersByStatus(col.status) as p (p?.id)}
 								{#if p}
 									<div
