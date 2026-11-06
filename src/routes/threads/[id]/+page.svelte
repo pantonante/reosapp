@@ -76,7 +76,9 @@
 	}
 
 	let search = $state('');
-	let sortBy = $state<'order' | 'added' | 'published' | 'title' | 'rating'>('order');
+	type SortBy = 'added' | 'published' | 'title' | 'rating';
+	const SORT_OPTIONS: SortBy[] = ['added', 'published', 'title', 'rating'];
+	let sortBy = $state<SortBy>('added');
 	let viewMode = $state<'library' | 'list' | 'status'>('library');
 
 	$effect(() => {
@@ -85,7 +87,18 @@
 		if (stored === 'library' || stored === 'list' || stored === 'status') {
 			untrack(() => (viewMode = stored));
 		}
+		const storedSort = localStorage.getItem('reos:threadSortBy');
+		if (storedSort && (SORT_OPTIONS as string[]).includes(storedSort)) {
+			untrack(() => (sortBy = storedSort as SortBy));
+		}
 	});
+
+	function setSortBy(value: SortBy) {
+		sortBy = value;
+		if (typeof localStorage !== 'undefined') {
+			localStorage.setItem('reos:threadSortBy', value);
+		}
+	}
 
 	function setViewMode(mode: 'library' | 'list' | 'status') {
 		viewMode = mode;
@@ -119,8 +132,6 @@
 				break;
 			case 'rating':
 				sorted.sort((a, b) => (b!.rating ?? -1) - (a!.rating ?? -1));
-				break;
-			default:
 				break;
 		}
 		return sorted;
@@ -469,9 +480,9 @@
 			</div>
 			<select
 				class="h-9 rounded-md border border-input bg-background px-3 text-sm"
-				bind:value={sortBy}
+				value={sortBy}
+				onchange={(e) => setSortBy(e.currentTarget.value as SortBy)}
 			>
-				<option value="order">Thread order</option>
 				<option value="added">Recently added</option>
 				<option value="published">Published date</option>
 				<option value="title">Title</option>
