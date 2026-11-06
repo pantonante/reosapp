@@ -26,6 +26,7 @@
 		X
 	} from 'lucide-svelte';
 	import { onDestroy, untrack } from 'svelte';
+	import { textZoom } from '$lib/text-zoom.svelte';
 
 	let { paper }: { paper: Paper } = $props();
 
@@ -383,7 +384,12 @@
 			</Button>
 		</div>
 		<div class="flex-1 overflow-y-auto px-6 py-8 sm:px-10">
-			<div class="summary-md mx-auto" bind:this={summaryEl}>
+			<div
+				class="summary-md mx-auto"
+				bind:this={summaryEl}
+				data-text-zoom
+				style:zoom={textZoom.value}
+			>
 				{#if summaryFrontmatter}
 					<div class="summary-meta mb-6 space-y-2">
 						{#if summaryFrontmatter.topics.length}

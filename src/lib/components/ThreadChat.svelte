@@ -23,6 +23,7 @@
 	import { onDestroy, tick, untrack } from 'svelte';
 	import { Send, Loader2, MessageSquare, Plus } from 'lucide-svelte';
 	import { cn } from '$lib/utils/cn';
+	import { textZoom } from '$lib/text-zoom.svelte';
 
 	let {
 		thread,
@@ -282,7 +283,7 @@ Defaults:
 			<span class="truncate text-xs text-muted-foreground" title={currentChatTitle}>{currentChatTitle}</span>
 		</div>
 		<div bind:this={scrollRoot} class="min-h-0 flex-1 overflow-y-auto">
-			<div class="mx-auto max-w-3xl space-y-3 px-4 py-4">
+			<div class="mx-auto max-w-3xl space-y-3 px-4 py-4" data-text-zoom style:zoom={textZoom.value}>
 				{#each messages as m (m.createdAt + m.role)}
 					<div
 						class={cn(

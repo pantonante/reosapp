@@ -23,6 +23,7 @@
 	import type { UnlistenFn } from '@tauri-apps/api/event';
 	import { onDestroy, onMount, tick } from 'svelte';
 	import { Send, Loader2, Clock, Plus } from 'lucide-svelte';
+	import { textZoom } from '$lib/text-zoom.svelte';
 
 	let { paper }: { paper: Paper } = $props();
 
@@ -227,7 +228,8 @@
 			{/if}
 		</div>
 	{/if}
-	<div bind:this={scrollRoot} class="flex-1 space-y-3 overflow-y-auto p-3">
+	<div bind:this={scrollRoot} class="flex-1 overflow-y-auto p-3">
+		<div class="space-y-3" data-text-zoom style:zoom={textZoom.value}>
 		{#each messages as m (m.createdAt + m.role)}
 			<div class="rounded-md border border-border/40 bg-background/40 p-2">
 				<div class="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -286,6 +288,7 @@
 				Ask Claude about this paper.
 			</p>
 		{/if}
+		</div>
 	</div>
 	<div class="border-t border-border/60 p-2">
 		<Textarea

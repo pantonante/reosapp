@@ -15,6 +15,7 @@
 	import FirstRunWizard from '$lib/components/FirstRunWizard.svelte';
 	import { syncExternalChanges } from '$lib/tauri/external-sync';
 	import { notesSync } from '$lib/stores/notes.svelte';
+	import { handleTextZoomKey } from '$lib/text-zoom.svelte';
 
 	let { children } = $props();
 	let booting = $state(true);
@@ -82,6 +83,8 @@
 		if (!booting) ui.lastPath = path;
 	});
 </script>
+
+<svelte:window onkeydown={handleTextZoomKey} />
 
 {#if booting}
 	<div class="flex min-h-screen w-full items-center justify-center text-sm text-muted-foreground">

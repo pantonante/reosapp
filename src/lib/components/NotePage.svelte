@@ -18,6 +18,7 @@
 	import { revealInFinder } from '$lib/tauri/shell';
 	import type { ThreadNote } from '$lib/types';
 	import { cn } from '$lib/utils/cn';
+	import { textZoom } from '$lib/text-zoom.svelte';
 
 	let {
 		threadSlug,
@@ -317,6 +318,8 @@
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<article
 						class="mx-auto w-full max-w-3xl px-6 py-8 sm:px-10"
+						data-text-zoom
+						style:zoom={textZoom.value}
 						ondblclick={() => void setMode('edit')}
 					>
 						<h1 class="font-mono text-2xl font-light tracking-tight text-foreground">{note.title}</h1>
