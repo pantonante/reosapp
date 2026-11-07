@@ -1,4 +1,4 @@
-// The 9 read-only tools plus 4 write tools (create_thread, add_paper,
+// The 9 read-only tools plus 5 write tools (create_thread, add_paper, move_paper,
 // create_note, update_note). List
 // tools return compact JSON; get tools return markdown. Descriptions encode the
 // cost-first reading order from the app's navigate-thread skill:
@@ -793,6 +793,65 @@ Deduplicates: if the paper is already in the library it is not re-added. If it s
 			if (!pdfPath) lines.push('', ...noPdfNotice(pdfFailures, true));
 			lines.push('', APP_SYNC_NOTE);
 			return text(lines.join('\n'));
+		})
+	);
+
+	server.registerTool(
+		'move_paper',
+		{
+			title: 'Move a Re:OS paper to another thread',
+			description: `Move a paper that is already in the library from its current thread (or the inbox) into another thread, or back to the inbox. A paper belongs to one thread at a time; everything that lives with it — PDF, summary, notes, highlights, chats — moves along. It is appended at the end of the destination thread's paper order.
+
+Args:
+  - paper: arxivId (as returned by search_papers / get_thread / add_paper) or a unique title substring
+  - to_thread: slug or title substring of the destination thread, or 'inbox'
+  - from_thread (optional): the paper's current thread, to disambiguate a title substring
+  - context_note (optional): why the paper belongs in the destination thread. The old thread's context note is dropped, since it explained the old placement.
+
+Returns markdown with the paper's arxivId and its old and new thread.`,
+			inputSchema: {
+				paper: z.string().trim().min(1).describe('arxivId or unique title substring'),
+				to_thread: threadParam.describe("Destination thread (slug or title substring), or 'inbox'"),
+				from_thread: threadParam
+					.optional()
+					.describe('Current thread, to narrow the paper lookup'),
+				context_note: z
+					.string()
+					.trim()
+					.max(2000)
+					.optional()
+					.describe('Why this paper is in the destination thread')
+			},
+			annotations: {
+				readOnlyHint: false,
+				destructiveHint: false,
+				idempotentHint: true,
+				openWorldHint: false
+			}
+		},
+		safe(async ({ paper, to_thread, from_thread, context_note }) => {
+			const found = await resolvePaper(paper, from_thread);
+			const toSlug =
+				to_thread.trim().toLowerCase() === INBOX_SLUG
+					? INBOX_SLUG
+					: (await resolveThread(to_thread)).slug;
+			const { meta, threadSlug: fromSlug } = found;
+			if (fromSlug === toSlug) {
+				return text(`**${meta.title}** (${meta.arxivId}) is already in ${where(toSlug)}; nothing moved.`);
+			}
+			const moved = await movePaper(fromSlug, toSlug, meta.arxivId, context_note);
+			const details: string[] = [];
+			if (moved.contextNote) details.push(`- **Context note**: ${moved.contextNote}`);
+			const pdfPath = await paperPdfPath(toSlug, moved.arxivId);
+			if (await fileExists(pdfPath)) details.push(`- **pdf_path**: ${pdfPath}`);
+			return text(
+				[
+					`Moved **${moved.title}** (${moved.arxivId}) from ${where(fromSlug)} to ${where(toSlug)}.`,
+					...(details.length ? ['', ...details] : []),
+					'',
+					APP_SYNC_NOTE
+				].join('\n')
+			);
 		})
 	);
 

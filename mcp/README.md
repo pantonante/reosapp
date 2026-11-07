@@ -6,7 +6,7 @@ MCP (Model Context Protocol) server for the Re:OS paper library. Lets Claude Cod
 
 - Bootstraps from `~/.reos/config.json` → `papersDir` (the same config the app writes).
 - Works on the library **directly on disk** — the filesystem is Re:OS's source of truth. It never touches the app's SQLite cache, so it works whether or not the app is running.
-- **Read-only except four write tools**: `create_thread` and `add_paper` create new folders/files (`threads/<slug>/meta.json`, `papers/<id>/{meta.json,paper.pdf}`), and `add_paper` may move a paper's folder out of the inbox into a thread. `create_note` / `update_note` write thread notes (`threads/<slug>/notes/<id>.md`) and copy embedded media into `notes/media/`; notes are the only files ever edited in place. Nothing is ever deleted. The read path (`store.ts`) only imports `readFile`/`readdir`/`stat`; all writes live in `mutate.ts`.
+- **Read-only except five write tools**: `create_thread` and `add_paper` create new folders/files (`threads/<slug>/meta.json`, `papers/<id>/{meta.json,paper.pdf}`), and `add_paper` may move a paper's folder out of the inbox into a thread. `move_paper` moves a paper's folder between threads (or to/from the inbox). `create_note` / `update_note` write thread notes (`threads/<slug>/notes/<id>.md`) and copy embedded media into `notes/media/`; notes are the only files ever edited in place. Nothing is ever deleted. The read path (`store.ts`) only imports `readFile`/`readdir`/`stat`; all writes live in `mutate.ts`.
 - **App sync**: every write bumps `_reos/external-changes.json`. The app polls that marker (on focus and every 5s) and pulls new threads/papers into its cache (`src/lib/tauri/external-sync.ts`) — no manual "Rebuild cache" needed.
 - No PDF text extraction: tools return the absolute `paper.pdf` path and the client reads the PDF natively.
 
@@ -48,6 +48,7 @@ On-disk layout it reads:
 | `create_thread` | Create a thread (title, optional question and parent thread) |
 | `create_note` | Write a markdown note into a thread; local image/video paths in the markdown are copied into `notes/media/`. Papers must be cited as `[text](paper:<arxivId>)` (added with `add_paper` first if missing); the response flags links that don't resolve |
 | `update_note` | Rename a note, replace its body, or append to it |
+| `move_paper` | Move a paper (with its PDF, summary, notes, highlights, chats) to another thread or the inbox; optional new context note |
 | `add_paper` | Add a paper by arXiv/AlphaXiv/bioRxiv/medRxiv ID or URL, any DOI or URL (journal page, PubMed Central, direct PDF link), or a local PDF path — into a thread or the inbox. Fetches metadata + PDF, dedups against the library |
 
 `add_paper` PDF discovery for non-arXiv sources, in order: the URL itself if it serves a PDF, the page's `citation_pdf_url`, Europe PMC full-text links (for PMC URLs), then open-access locations from OpenAlex for the DOI. Metadata falls back to Europe PMC / OpenAlex when the publisher page is bot-protected. Paywalled papers end up as webpage papers (no PDF) and the response lists what was tried; the caller can supply `pdf_path` (local file) or `pdf_url`. Every downloaded file is checked for the `%PDF-` header, so paywall/challenge HTML is never saved as a PDF.

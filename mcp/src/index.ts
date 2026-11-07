@@ -4,7 +4,7 @@
  *
  * Works on the library directly on disk (papersDir from ~/.reos/config.json)
  * and never touches the app's SQLite cache. Read-only except for the additive
- * create_thread/add_paper tools (see mutate.ts).
+ * create_thread/add_paper/move_paper and note tools (see mutate.ts).
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';

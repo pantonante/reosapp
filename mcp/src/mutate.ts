@@ -1,5 +1,5 @@
-// Write layer for the mutating tools (create_thread, add_paper, create_note,
-// update_note). Kept apart from store.ts so the read path stays provably
+// Write layer for the mutating tools (create_thread, add_paper, move_paper,
+// create_note, update_note). Kept apart from store.ts so the read path stays provably
 // read-only. Layout and meta.json shapes mirror writeThreadMeta/writePaperMeta
 // in ../../src/lib/tauri/fs.ts; note files mirror ../../src/lib/tauri/notes.ts.
 //
@@ -182,9 +182,11 @@ export async function writeNewPaper(
 }
 
 /**
- * File an existing paper into another thread (the app's papers.move): moves
- * the whole folder — PDF, notes, highlights, chats — and updates its
- * order/context note.
+ * Move an existing paper to another thread or the inbox (the app's
+ * papers.move): moves the whole folder — PDF, notes, highlights, chats — and
+ * updates its order/context note. A context note explains why the paper sits
+ * in its old thread, so it is dropped when leaving a thread (unless a new one
+ * is given); one recorded while in the inbox is kept when filing it.
  */
 export async function movePaper(
 	fromSlug: string,
@@ -192,6 +194,7 @@ export async function movePaper(
 	arxivId: string,
 	contextNote: string | undefined
 ): Promise<StoredPaper> {
+	if (fromSlug === toSlug) throw new Error(`${arxivId} is already in thread '${toSlug}'.`);
 	const fromDir = await paperDir(fromSlug, arxivId);
 	const toDir = await paperDir(toSlug, arxivId);
 	if (await exists(toDir)) {
@@ -199,13 +202,15 @@ export async function movePaper(
 	}
 	const current = await readPaperMeta(fromSlug, arxivId);
 	if (!current) throw new Error(`Paper ${arxivId} has no meta.json in thread '${fromSlug}'.`);
-	const orderInThread = await nextOrder(toSlug);
+	if (toSlug === INBOX_SLUG) await ensureInbox();
+	const orderInThread = toSlug === INBOX_SLUG ? undefined : await nextOrder(toSlug);
 	await mkdir(join(await threadDir(toSlug), 'papers'), { recursive: true });
 	await rename(fromDir, toDir);
 	const next: StoredPaper = {
 		...current,
 		orderInThread,
-		contextNote: contextNote || current.contextNote
+		contextNote:
+			contextNote || (fromSlug === INBOX_SLUG ? current.contextNote : undefined) || undefined
 	};
 	await writeJson(join(toDir, 'meta.json'), next);
 	await touchExternalChanges();

@@ -304,10 +304,12 @@ npm run build</pre>
 			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">list_chats</code>,
 			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">get_chat</code> and
 			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">get_vocabulary</code>, plus
-			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">create_thread</code> and
+			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">create_thread</code>,
 			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">add_paper</code>
 			(arXiv, AlphaXiv, bioRxiv/medRxiv, any DOI or webpage URL, or a local PDF — open-access PDFs
-			are found automatically). Papers and threads it adds show up
+			are found automatically) and
+			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">move_paper</code>
+			(refile a paper into another thread). Papers and threads it adds or moves show up
 			here within a few seconds. It reads summaries and notes before falling back to PDFs, and it picks up the papers
 			folder configured above — no separate setup. After changing the folder here, new chats
 			see it immediately; rebuild is only needed when the server code itself changes.
