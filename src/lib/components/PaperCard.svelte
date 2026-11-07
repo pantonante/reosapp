@@ -13,6 +13,8 @@
 
 	function statusDot(status: Paper['readingStatus']): string {
 		switch (status) {
+			case 'skimmed':
+				return 'bg-sky-500';
 			case 'reading':
 				return 'bg-yellow-500';
 			case 'read':

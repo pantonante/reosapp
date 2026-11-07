@@ -16,6 +16,8 @@
 		fragment: DocumentFragment;
 		path: string;
 		scale: number;
+		zoomRatio: number;
+		baseWidth: number;
 		scrollTop: number;
 		totalPages: number;
 		currentPage: number;
@@ -64,6 +66,11 @@
 	let totalPages = $state(0);
 	let currentPage = $state(1);
 	let scale = $state(1.2);
+	// Zoom relative to fit-to-width (1 = page fills the pane). Kept separately
+	// from `scale` so resizing the pane refits while preserving manual zoom.
+	let zoomRatio = 1;
+	// Width of page 1 at scale 1, cached so fit scale can be computed sync.
+	let baseWidth = 0;
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let restored = $state(false);
@@ -442,6 +449,8 @@
 		textLayerBuilders = cached.textLayerBuilders;
 		totalPages = cached.totalPages;
 		scale = cached.scale;
+		zoomRatio = cached.zoomRatio;
+		baseWidth = cached.baseWidth;
 		currentPage = cached.currentPage;
 		canvasContainer.innerHTML = '';
 		canvasContainer.appendChild(cached.fragment);
@@ -458,6 +467,8 @@
 		scrollContainer.scrollTop = cached.scrollTop;
 		renderHighlightLayers();
 		void rebuildLinkLayers();
+		// The pane may have changed width while this paper was unmounted.
+		refitToContainer();
 		return true;
 	}
 
@@ -519,13 +530,157 @@
 		}
 	}
 
+	function fitScale(): number | null {
+		if (!baseWidth || !scrollContainer) return null;
+		// scrollContainer has p-4 (16px) on each side.
+		const available = scrollContainer.clientWidth - 32;
+		return available > 0 ? available / baseWidth : null;
+	}
+
 	async function fitToWidth() {
 		if (!pdfDoc || !scrollContainer) return;
 		const page = await pdfDoc.getPage(1);
-		const baseViewport = page.getViewport({ scale: 1 });
-		// scrollContainer has p-4 (16px) on each side.
-		const available = scrollContainer.clientWidth - 32;
-		if (available > 0) scale = available / baseViewport.width;
+		baseWidth = page.getViewport({ scale: 1 }).width;
+		zoomRatio = 1;
+		const fit = fitScale();
+		if (fit) scale = fit;
+	}
+
+	// Re-render at the current zoom ratio when the pane width changes
+	// (window resize, sidebar/split drag, fullscreen toggle).
+	function refitToContainer() {
+		if (!pdfDoc || loading) return;
+		const fit = fitScale();
+		if (!fit) return;
+		const target = fit * zoomRatio;
+		if (Math.abs(target - scale) / scale < 0.005) return;
+		scale = target;
+		void renderAll();
+	}
+
+	function syncZoomRatio() {
+		const fit = fitScale();
+		if (fit) zoomRatio = scale / fit;
+	}
+
+	type ScrollAnchor = { el: HTMLElement; fx: number; fy: number };
+
+	// The point under the viewport center, as a fraction of the page it sits
+	// on. Restoring it after a resize keeps whatever the user was looking at
+	// in place, instead of only pinning the page's top edge.
+	function captureAnchor(): ScrollAnchor | null {
+		if (!scrollContainer || !canvasContainer) return null;
+		const box = scrollContainer.getBoundingClientRect();
+		const cx = box.left + scrollContainer.clientWidth / 2;
+		const cy = box.top + scrollContainer.clientHeight / 2;
+		for (const el of canvasContainer.querySelectorAll<HTMLElement>('[data-page-number]')) {
+			const r = el.getBoundingClientRect();
+			if (r.bottom < cy || r.height === 0) continue;
+			return { el, fx: (cx - r.left) / r.width, fy: (cy - r.top) / r.height };
+		}
+		return null;
+	}
+
+	function restoreAnchor(anchor: ScrollAnchor) {
+		if (!scrollContainer) return;
+		const box = scrollContainer.getBoundingClientRect();
+		const r = anchor.el.getBoundingClientRect();
+		scrollContainer.scrollTop +=
+			r.top + anchor.fy * r.height - (box.top + scrollContainer.clientHeight / 2);
+		scrollContainer.scrollLeft +=
+			r.left + anchor.fx * r.width - (box.left + scrollContainer.clientWidth / 2);
+	}
+
+	// Page size at scale 1, recorded on the wrapper when it's rendered. Falls
+	// back to deriving it from the current CSS size for wrappers rendered
+	// before this was tracked.
+	function baseSize(wrapper: HTMLElement): { w: number; h: number } | null {
+		const w = Number(wrapper.dataset.baseWidth);
+		const h = Number(wrapper.dataset.baseHeight);
+		if (w && h) return { w, h };
+		const canvas = wrapper.querySelector('canvas');
+		const factor = parseFloat(wrapper.style.getPropertyValue('--scale-factor'));
+		if (!canvas || !factor) return null;
+		return { w: parseFloat(canvas.style.width) / factor, h: parseFloat(canvas.style.height) / factor };
+	}
+
+	// Resize every page to the current scale synchronously. The old bitmap is
+	// stretched (briefly soft) until rasterizePage() replaces it, but layout,
+	// text selection, highlights and links all land at the new size at once.
+	function applyScaleToLayout(wrappers: HTMLElement[]) {
+		for (const wrapper of wrappers) {
+			const base = baseSize(wrapper);
+			const canvas = wrapper.querySelector('canvas');
+			if (!base || !canvas) continue;
+			const cssWidth = Math.floor(base.w * scale);
+			const cssHeight = Math.floor(base.h * scale);
+			wrapper.style.width = `${cssWidth}px`;
+			wrapper.style.setProperty('--scale-factor', String(scale));
+			canvas.style.width = `${cssWidth}px`;
+			canvas.style.height = `${cssHeight}px`;
+		}
+	}
+
+	// Rasterize one page at the current scale into a fresh canvas and swap it
+	// in when done, so the page never flashes blank mid-render.
+	async function rasterizePage(wrapper: HTMLElement, i: number, token: number) {
+		const page = await pdfDoc.getPage(i);
+		if (token !== renderToken) return;
+		const viewport = page.getViewport({ scale });
+		const base = page.getViewport({ scale: 1 });
+		wrapper.dataset.baseWidth = String(base.width);
+		wrapper.dataset.baseHeight = String(base.height);
+
+		// HiDPI/Retina: render to a backing-store-sized canvas so the
+		// rasterized PDF matches the screen's physical pixels, then let CSS
+		// scale it back down to the logical viewport size. Without this the
+		// browser upscales a 1x canvas on a 2x display and the result looks
+		// soft.
+		const outputScale = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+		const cssWidth = Math.floor(viewport.width);
+		const cssHeight = Math.floor(viewport.height);
+		const canvas = document.createElement('canvas');
+		canvas.className = 'block rounded shadow-lg';
+		canvas.width = Math.floor(viewport.width * outputScale);
+		canvas.height = Math.floor(viewport.height * outputScale);
+		canvas.style.width = `${cssWidth}px`;
+		canvas.style.height = `${cssHeight}px`;
+		const ctx = canvas.getContext('2d');
+		if (ctx) {
+			const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined;
+			await page.render({ canvasContext: ctx, viewport, transform }).promise;
+		}
+		if (token !== renderToken) return;
+
+		// TextLayerBuilder expresses font sizes and marked-content positions
+		// relative to this PDF.js variable. Keeping it on the page wrapper also
+		// makes the overlay track the canvas exactly after zooming.
+		wrapper.style.setProperty('--scale-factor', String(viewport.scale));
+		wrapper.style.width = `${cssWidth}px`;
+		const old = wrapper.querySelector('canvas');
+		if (old) old.replaceWith(canvas);
+		else wrapper.prepend(canvas);
+
+		let textLayerBuilder = textLayerBuilders[i - 1];
+		if (textLayerBuilder?.div?.parentNode !== wrapper) {
+			// Handles a layer rendered before the builder-backed selection fix
+			// (notably during hot reload) without leaving stale overlay nodes.
+			wrapper.querySelector('.textLayer')?.remove();
+			if (!TextLayerBuilderCtor) {
+				const pdfjsViewer = await import('pdfjs-dist/web/pdf_viewer.mjs');
+				TextLayerBuilderCtor = pdfjsViewer.TextLayerBuilder;
+			}
+			textLayerBuilder = new TextLayerBuilderCtor({ pdfPage: page });
+			textLayerBuilders[i - 1] = textLayerBuilder;
+			canvas.after(textLayerBuilder.div);
+		}
+		// Use PDF.js' viewer builder rather than the low-level TextLayer alone.
+		// Besides positioning spans, the builder manages an end-of-content
+		// sentinel while dragging. That keeps selection bounded to the active
+		// line/paragraph instead of jumping across absolutely-positioned spans.
+		await textLayerBuilder.render(viewport);
+		if (token !== renderToken) return;
+		void renderLinkLayer(page, viewport, wrapper, token);
 	}
 
 	async function renderAll() {
@@ -533,124 +688,56 @@
 		const token = ++renderToken;
 
 		// Re-use existing wrappers when the page count matches. This keeps
-		// scrollTop stable across zoom and fullscreen-fit re-renders — wiping
-		// the container collapses content height to 0 and the browser snaps
-		// the user back to the top.
+		// scrollTop stable across zoom and resize re-renders — wiping the
+		// container collapses content height to 0 and the browser snaps the
+		// user back to the top.
 		const existing = Array.from(
 			canvasContainer.querySelectorAll<HTMLDivElement>('[data-page-number]')
 		);
-		const inPlace = existing.length === totalPages;
 
-		if (!inPlace) {
-			canvasContainer.innerHTML = '';
-			pageObserver?.disconnect();
-			pageObserver = new IntersectionObserver(
-				(entries) => {
-					// Pick the most-visible page as the current one.
-					let best: IntersectionObserverEntry | null = null;
-					for (const entry of entries) {
-						if (!entry.isIntersecting) continue;
-						if (!best || entry.intersectionRatio > best.intersectionRatio) best = entry;
-					}
-					if (best) {
-						const n = Number((best.target as HTMLElement).dataset.pageNumber);
-						if (n) currentPage = n;
-					}
-				},
-				{ root: scrollContainer, threshold: [0.25, 0.5, 0.75] }
-			);
+		if (existing.length === totalPages) {
+			const anchor = captureAnchor();
+			applyScaleToLayout(existing);
+			if (anchor) restoreAnchor(anchor);
+			renderHighlightLayers();
+			// Re-rasterize the visible page first, then work outward, so the
+			// page the user is looking at sharpens immediately.
+			const anchorIndex = anchor ? existing.indexOf(anchor.el as HTMLDivElement) : 0;
+			const order = existing
+				.map((_, idx) => idx)
+				.sort((a, b) => Math.abs(a - anchorIndex) - Math.abs(b - anchorIndex));
+			for (const idx of order) {
+				if (token !== renderToken) return;
+				await rasterizePage(existing[idx], idx + 1, token);
+			}
+			return;
 		}
 
-		// Anchor the scroll position to whichever page was visible before the
-		// re-render. After each iteration mutates a wrapper above the anchor,
-		// re-align scrollTop so the anchor stays visually fixed.
-		const anchorPage = inPlace ? currentPage : 0;
-		const anchorEl = anchorPage > 0 ? existing[anchorPage - 1] : null;
-
+		canvasContainer.innerHTML = '';
+		pageObserver?.disconnect();
+		pageObserver = new IntersectionObserver(
+			(entries) => {
+				// Pick the most-visible page as the current one.
+				let best: IntersectionObserverEntry | null = null;
+				for (const entry of entries) {
+					if (!entry.isIntersecting) continue;
+					if (!best || entry.intersectionRatio > best.intersectionRatio) best = entry;
+				}
+				if (best) {
+					const n = Number((best.target as HTMLElement).dataset.pageNumber);
+					if (n) currentPage = n;
+				}
+			},
+			{ root: scrollContainer, threshold: [0.25, 0.5, 0.75] }
+		);
 		for (let i = 1; i <= totalPages; i++) {
 			if (token !== renderToken) return;
-			const oldAnchorTop = anchorEl?.offsetTop ?? 0;
-
-			const page = await pdfDoc.getPage(i);
-			const viewport = page.getViewport({ scale });
-
-			let wrapper: HTMLDivElement;
-			let canvas: HTMLCanvasElement;
-			let textLayerDiv: HTMLDivElement;
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			let textLayerBuilder: any;
-			if (inPlace) {
-				wrapper = existing[i - 1];
-				canvas = wrapper.querySelector('canvas')!;
-				textLayerBuilder = textLayerBuilders[i - 1];
-				if (textLayerBuilder?.div?.parentNode === wrapper) {
-					textLayerDiv = textLayerBuilder.div;
-				} else {
-					// Handles a layer rendered before the builder-backed selection fix
-					// (notably during hot reload) without leaving stale overlay nodes.
-					wrapper.querySelector('.textLayer')?.remove();
-					if (!TextLayerBuilderCtor) {
-						const pdfjsViewer = await import('pdfjs-dist/web/pdf_viewer.mjs');
-						TextLayerBuilderCtor = pdfjsViewer.TextLayerBuilder;
-					}
-					textLayerBuilder = new TextLayerBuilderCtor({ pdfPage: page });
-					textLayerBuilders[i - 1] = textLayerBuilder;
-					textLayerDiv = textLayerBuilder.div;
-					wrapper.appendChild(textLayerDiv);
-				}
-			} else {
-				wrapper = document.createElement('div');
-				wrapper.dataset.pageNumber = String(i);
-				wrapper.className = 'relative mx-auto';
-				canvas = document.createElement('canvas');
-				canvas.className = 'block rounded shadow-lg';
-				wrapper.appendChild(canvas);
-				textLayerBuilder = new TextLayerBuilderCtor({ pdfPage: page });
-				textLayerBuilders[i - 1] = textLayerBuilder;
-				textLayerDiv = textLayerBuilder.div;
-				wrapper.appendChild(textLayerDiv);
-				canvasContainer.appendChild(wrapper);
-				pageObserver!.observe(wrapper);
-			}
-			// TextLayerBuilder expresses font sizes and marked-content positions
-			// relative to this PDF.js variable. Keeping it on the page wrapper also
-			// makes the overlay track the canvas exactly after zooming.
-			wrapper.style.setProperty('--scale-factor', String(viewport.scale));
-
-			// HiDPI/Retina: render to a backing-store-sized canvas so the
-			// rasterized PDF matches the screen's physical pixels, then let CSS
-			// scale it back down to the logical viewport size. Without this the
-			// browser upscales a 1x canvas on a 2x display and the result looks
-			// soft.
-			const outputScale = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
-			const cssWidth = Math.floor(viewport.width);
-			const cssHeight = Math.floor(viewport.height);
-			wrapper.style.width = `${cssWidth}px`;
-			canvas.width = Math.floor(viewport.width * outputScale);
-			canvas.height = Math.floor(viewport.height * outputScale);
-			canvas.style.width = `${cssWidth}px`;
-			canvas.style.height = `${cssHeight}px`;
-			const ctx = canvas.getContext('2d');
-			if (ctx) {
-				const transform =
-					outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined;
-				await page.render({ canvasContext: ctx, viewport, transform }).promise;
-			}
-
-			// Use PDF.js' viewer builder rather than the low-level TextLayer alone.
-			// Besides positioning spans, the builder manages an end-of-content
-			// sentinel while dragging. That keeps selection bounded to the active
-			// line/paragraph instead of jumping across absolutely-positioned spans.
-			await textLayerBuilder.render(viewport);
-			if (token !== renderToken) return;
-			void renderLinkLayer(page, viewport, wrapper, token);
-
-			// Keep the anchor pinned: any size change above it shifts its
-			// offsetTop, so add the delta to scrollTop to compensate.
-			if (anchorEl && scrollContainer && i < anchorPage) {
-				const delta = anchorEl.offsetTop - oldAnchorTop;
-				if (delta !== 0) scrollContainer.scrollTop += delta;
-			}
+			const wrapper = document.createElement('div');
+			wrapper.dataset.pageNumber = String(i);
+			wrapper.className = 'relative mx-auto';
+			canvasContainer.appendChild(wrapper);
+			pageObserver.observe(wrapper);
+			await rasterizePage(wrapper, i, token);
 		}
 		renderHighlightLayers();
 	}
@@ -667,13 +754,23 @@
 	function prevPage() {
 		if (currentPage > 1) scrollToPage(currentPage - 1);
 	}
+	const ZOOM_STEP = 1.15;
+	const MIN_SCALE = 0.25;
+	const MAX_SCALE = 5;
+	// Multiplicative steps so each click feels the same at any zoom level.
+	// Never step the wrong way: if fit-to-width already put the scale past a
+	// limit, a click toward that limit is a no-op rather than a jump back.
+	function setZoom(next: number) {
+		if (next === scale) return;
+		scale = next;
+		syncZoomRatio();
+		void renderAll();
+	}
 	function zoomIn() {
-		scale = Math.min(scale + 0.2, 3);
-		renderAll();
+		if (scale < MAX_SCALE) setZoom(Math.min(scale * ZOOM_STEP, MAX_SCALE));
 	}
 	function zoomOut() {
-		scale = Math.max(scale - 0.2, 0.5);
-		renderAll();
+		if (scale > MIN_SCALE) setZoom(Math.max(scale / ZOOM_STEP, MIN_SCALE));
 	}
 
 	onMount(() => {
@@ -738,24 +835,27 @@
 		writeSavedPage(paperId, currentPage);
 	});
 
-	// Refit width when the user toggles fullscreen — the container changes
-	// width and the existing scale would leave the PDF either tiny (entering
-	// fullscreen from a narrow pane) or clipped (exiting fullscreen).
-	let lastFullscreen = $state<boolean | null>(null);
+	// Refit when the pane resizes. Debounced: every renderAll() re-rasterizes
+	// all pages, so only re-render once the drag settles.
 	$effect(() => {
-		const fs = ui.pdfFullscreen;
-		if (lastFullscreen === null) {
-			lastFullscreen = fs;
-			return;
-		}
-		if (fs === lastFullscreen) return;
-		lastFullscreen = fs;
-		if (!pdfDoc) return;
-		// Defer to next frame so the layout has settled at the new width.
-		requestAnimationFrame(async () => {
-			await fitToWidth();
-			await renderAll();
+		const el = scrollContainer;
+		if (!el) return;
+		let timer: ReturnType<typeof setTimeout> | null = null;
+		let lastWidth = el.clientWidth;
+		const observer = new ResizeObserver(() => {
+			if (el.clientWidth === lastWidth) return;
+			lastWidth = el.clientWidth;
+			if (timer) clearTimeout(timer);
+			timer = setTimeout(() => {
+				timer = null;
+				refitToContainer();
+			}, 120);
 		});
+		observer.observe(el);
+		return () => {
+			observer.disconnect();
+			if (timer) clearTimeout(timer);
+		};
 	});
 
 	onDestroy(() => {
@@ -778,6 +878,8 @@
 				fragment,
 				path,
 				scale,
+				zoomRatio,
+				baseWidth,
 				scrollTop: scrollContainer?.scrollTop ?? 0,
 				totalPages,
 				currentPage,

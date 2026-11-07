@@ -7,7 +7,7 @@
 	import { goto } from '$app/navigation';
 	import { Button, Input } from '$lib/components/ui';
 	import { ui } from '$lib/stores.svelte';
-	import { Maximize2, Search } from 'lucide-svelte';
+	import { Maximize2, Network, Search } from 'lucide-svelte';
 	import { buildGraph, categoricalColor, type GraphNode, type GraphEdge } from '$lib/graph/build';
 	import type { Paper, SummaryMeta } from '$lib/types';
 
@@ -30,6 +30,11 @@
 
 	let container: HTMLDivElement | null = $state(null);
 	let cy: Core | null = null;
+	let activeLayout: cytoscape.Layouts | null = null;
+	let layoutRunning = $state(false);
+	// Graph currently rendered in cytoscape; avoids re-adding/re-laying-out the
+	// same graph when the sync effect first fires right after mount.
+	let renderedGraph: typeof graph | null = null;
 
 	let threshold = $state(2);
 	let colorMode = $state<ColorMode>('domain');
@@ -151,6 +156,7 @@
 
 	function initCy() {
 		if (!container || cy) return;
+		renderedGraph = graph;
 		cy = cytoscape({
 			container,
 			elements: buildElements(graph),
@@ -204,20 +210,9 @@
 					style: { 'line-color': 'rgba(251, 191, 36, 0.85)', opacity: 1 }
 				}
 			],
-			layout: {
-				name: 'cose-bilkent',
-				// @ts-expect-error - layout-specific options not in base type
-				animate: 'end',
-				animationDuration: 600,
-				idealEdgeLength: 140,
-				nodeRepulsion: 18000,
-				edgeElasticity: 0.45,
-				gravity: 0.25,
-				numIter: 2500,
-				tile: true,
-				randomize: true
-			}
+			layout: { name: 'preset' }
 		});
+		runLayout(true);
 
 		cy.on('tap', 'node', (evt) => {
 			const id = evt.target.id();
@@ -285,21 +280,48 @@
 	}
 
 	function syncElements() {
-		if (!cy) return;
+		if (!cy || renderedGraph === graph) return;
+		renderedGraph = graph;
 		cy.elements().remove();
 		cy.add(buildElements(graph));
-		cy.layout({
+		runLayout(false);
+	}
+
+	/**
+	 * Run the force-directed layout. `randomize` starts from scratch (fresh
+	 * arrangement); otherwise it refines the current positions.
+	 */
+	function runLayout(randomize: boolean) {
+		if (!cy) return;
+		activeLayout?.stop();
+		const layout = cy.layout({
 			name: 'cose-bilkent',
 			// @ts-expect-error - layout-specific options not in base type
 			animate: 'end',
-			animationDuration: 500,
-			idealEdgeLength: 90,
-			nodeRepulsion: 8000,
+			animationDuration: randomize ? 600 : 500,
+			idealEdgeLength: randomize ? 140 : 90,
+			nodeRepulsion: randomize ? 18000 : 8000,
+			edgeElasticity: 0.45,
 			gravity: 0.25,
 			numIter: 2500,
 			tile: true,
-			randomize: false
-		}).run();
+			randomize,
+			fit: true,
+			padding: 40
+		});
+		activeLayout = layout;
+		layoutRunning = true;
+		layout.one('layoutstop', () => {
+			if (activeLayout === layout) {
+				activeLayout = null;
+				layoutRunning = false;
+			}
+		});
+		layout.run();
+	}
+
+	function autoLayout() {
+		runLayout(true);
 	}
 
 	function applyHighlight() {
@@ -349,6 +371,8 @@
 	});
 
 	onDestroy(() => {
+		activeLayout?.stop();
+		activeLayout = null;
 		cy?.destroy();
 		cy = null;
 	});
@@ -447,6 +471,16 @@
 					· <span class="text-amber-600 dark:text-amber-400">{graph.hiddenPaperCount} hidden</span>
 				{/if}
 			</span>
+			<Button
+				size="sm"
+				variant="ghost"
+				onclick={autoLayout}
+				disabled={layoutRunning || graph.nodes.length === 0}
+				title="Re-run automatic layout"
+			>
+				<Network class="h-3.5 w-3.5" />
+				<span class="text-[11px]">Auto layout</span>
+			</Button>
 			<Button size="sm" variant="ghost" onclick={fit} title="Fit graph to view">
 				<Maximize2 class="h-3.5 w-3.5" />
 			</Button>

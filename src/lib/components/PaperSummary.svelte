@@ -2,7 +2,7 @@
 	import 'katex/dist/katex.min.css';
 	import { Marked } from 'marked';
 	import { katexExtension } from '$lib/utils/markdown-katex';
-	import { Button } from '$lib/components/ui';
+	import { Button, Dialog, Textarea } from '$lib/components/ui';
 	import type { Paper } from '$lib/types';
 	import { join } from '@tauri-apps/api/path';
 	import { INBOX_SLUG, paperDir, readPaperSummary } from '$lib/tauri/fs';
@@ -201,9 +201,33 @@
 		}
 	});
 
-	async function generate() {
+	async function generate(feedback?: string) {
 		stderrExpanded = true;
-		await startSummary(paper);
+		await startSummary(paper, { feedback });
+	}
+
+	// Regenerate opens a dialog so the user can say what to fix in the
+	// previous summary; the text is passed through to the prompt.
+	let regenOpen = $state(false);
+	let regenFeedback = $state('');
+
+	function openRegenerate() {
+		regenFeedback = '';
+		regenOpen = true;
+	}
+
+	function submitRegenerate() {
+		const feedback = regenFeedback.trim() || undefined;
+		regenOpen = false;
+		regenFeedback = '';
+		void generate(feedback);
+	}
+
+	function onRegenKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+			e.preventDefault();
+			submitRegenerate();
+		}
 	}
 
 	async function cancel() {
@@ -214,6 +238,32 @@
 		clearJob(paper.id);
 	}
 </script>
+
+<Dialog
+	bind:open={regenOpen}
+	title="Regenerate summary"
+	description="Tell Claude what to fix in the current summary. Leave it blank to regenerate from scratch."
+>
+	<div class="space-y-3">
+		<Textarea
+			bind:value={regenFeedback}
+			onkeydown={onRegenKeydown}
+			placeholder="e.g. The method section is too vague: explain the loss function. Skip the related-work recap."
+			rows={5}
+			autofocus
+		/>
+		<div class="flex items-center justify-between pt-1">
+			<span class="text-[10px] text-muted-foreground">⌘↵ to regenerate</span>
+			<div class="flex gap-2">
+				<Button variant="ghost" onclick={() => (regenOpen = false)}>Cancel</Button>
+				<Button onclick={submitRegenerate}>
+					<RefreshCw class="h-3.5 w-3.5" />
+					Regenerate
+				</Button>
+			</div>
+		</div>
+	</div>
+</Dialog>
 
 <div class="flex h-full flex-col">
 	{#if !loaded && !streaming && !jobError}
@@ -320,7 +370,7 @@
 			</span>
 			<div class="flex gap-1">
 				<Button size="sm" variant="ghost" onclick={dismissError}>Dismiss</Button>
-				<Button size="sm" variant="ghost" onclick={generate} disabled={!canSummarize}>
+				<Button size="sm" variant="ghost" onclick={() => generate()} disabled={!canSummarize}>
 					<RefreshCw class="h-3 w-3" />
 					Retry
 				</Button>
@@ -378,7 +428,7 @@
 	{:else if summary}
 		<div class="flex items-center justify-between border-b border-border/60 px-3 py-1.5">
 			<span class="text-[10px] uppercase tracking-wider text-muted-foreground">Summary</span>
-			<Button size="sm" variant="ghost" onclick={generate} disabled={!canSummarize}>
+			<Button size="sm" variant="ghost" onclick={openRegenerate} disabled={!canSummarize}>
 				<RefreshCw class="h-3 w-3" />
 				Regenerate
 			</Button>
@@ -434,7 +484,7 @@
 					No summary yet. Generate a builder-oriented review of this paper.
 				{/if}
 			</p>
-			<Button size="sm" onclick={generate} disabled={!canSummarize}>
+			<Button size="sm" onclick={() => generate()} disabled={!canSummarize}>
 				<Sparkles class="h-3.5 w-3.5" />
 				Generate summary
 			</Button>

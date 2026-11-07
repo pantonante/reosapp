@@ -140,6 +140,7 @@
 	const cols: { status: ReadingStatus; label: string }[] = [
 		{ status: 'unread', label: 'Unread' },
 		{ status: 'reading', label: 'Reading' },
+		{ status: 'skimmed', label: 'Skimmed' },
 		{ status: 'read', label: 'Read' }
 	];
 
@@ -575,7 +576,7 @@
 				</table>
 			</div>
 		{:else}
-			<div class="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+			<div class="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
 				{#each cols as col (col.status)}
 					{@const isStatusDropTarget = dropTargetStatus === col.status}
 					<div

@@ -1,4 +1,4 @@
-export type ReadingStatus = 'unread' | 'reading' | 'read' | 'archived';
+export type ReadingStatus = 'unread' | 'reading' | 'skimmed' | 'read' | 'archived';
 export type ThreadStatus = 'active' | 'paused' | 'concluded' | 'archived';
 
 export interface Paper {

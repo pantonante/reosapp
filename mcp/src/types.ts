@@ -2,7 +2,7 @@
 // These mirror what is actually persisted on disk (StoredPaper/StoredThread
 // are the meta.json shapes; see ../../src/lib/tauri/fs.ts).
 
-export type ReadingStatus = 'unread' | 'reading' | 'read' | 'archived';
+export type ReadingStatus = 'unread' | 'reading' | 'skimmed' | 'read' | 'archived';
 export type ThreadStatus = 'active' | 'paused' | 'concluded' | 'archived';
 
 /** threads/<slug>/meta.json */

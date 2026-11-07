@@ -572,7 +572,7 @@
 										Reading status
 									</div>
 									<div class="mt-2 flex flex-wrap gap-1">
-										{#each ['unread', 'reading', 'read', 'archived'] as s (s)}
+										{#each ['unread', 'reading', 'skimmed', 'read', 'archived'] as s (s)}
 											<Button
 												size="sm"
 												variant={paper.readingStatus === s ? 'secondary' : 'ghost'}

@@ -291,7 +291,7 @@ Matches case-insensitive substrings of every whitespace-separated query term aga
 Args:
   - query (optional): search terms, e.g. 'diffusion policy'
   - thread (optional): restrict to one thread (slug or title substring)
-  - status (optional): 'unread' | 'reading' | 'read' | 'archived'
+  - status (optional): 'unread' | 'reading' | 'skimmed' | 'read' | 'archived'
   - tags (optional): tags that must all be present (matched against tags + summary frontmatter)
   - limit (default 25, max 100), offset (default 0)
 
@@ -299,7 +299,7 @@ Returns JSON: { total, count, offset, has_more, papers: [{ arxivId, title, autho
 			inputSchema: {
 				query: z.string().optional().describe('Search terms; omit to list all papers'),
 				thread: threadParam.optional(),
-				status: z.enum(['unread', 'reading', 'read', 'archived']).optional(),
+				status: z.enum(['unread', 'reading', 'skimmed', 'read', 'archived']).optional(),
 				tags: z.array(z.string()).optional().describe('Tags that must all match'),
 				limit: z.number().int().min(1).max(100).default(25),
 				offset: z.number().int().min(0).default(0)

@@ -147,7 +147,15 @@ export async function cancelJob(paperId: string): Promise<void> {
 	sessionToPaperRef.delete(job.sessionId);
 }
 
-export async function startSummary(paper: Paper): Promise<SummaryJob | null> {
+export interface StartSummaryOptions {
+	/** What the user wants fixed relative to the existing `summary.md`. */
+	feedback?: string;
+}
+
+export async function startSummary(
+	paper: Paper,
+	opts: StartSummaryOptions = {}
+): Promise<SummaryJob | null> {
 	// A paper needs either a PDF on disk or a source URL to be summarizable.
 	if (!paper.pdfPath && !paper.sourceUrl) return null;
 	if (isRunning(paper.id)) return jobs[paper.id];
@@ -197,13 +205,28 @@ export async function startSummary(paper: Paper): Promise<SummaryJob | null> {
 	// `summary.md` with the same YAML frontmatter shape the rest of the app
 	// expects (topics/domains/keywords).
 	const isWebpage = !paper.pdfPath && !!paper.sourceUrl;
-	const prompt = isWebpage
+	const basePrompt = isWebpage
 		? vocabularyPath
 			? `Summarize the webpage at ${paper.sourceUrl}. Use WebFetch to read it, then write summary.md in the current directory. Begin the file with YAML frontmatter containing three arrays — topics, domains, keywords — each lowercase-hyphenated tags. Library vocabulary: ${vocabularyPath}`
 			: `Summarize the webpage at ${paper.sourceUrl}. Use WebFetch to read it, then write summary.md in the current directory. Begin the file with YAML frontmatter containing three arrays — topics, domains, keywords — each lowercase-hyphenated tags.`
 		: vocabularyPath
 			? `Summarize this paper. Library vocabulary: ${vocabularyPath}`
 			: 'Summarize this paper.';
+
+	// Regenerating with feedback: the previous summary.md is still in CWD, so
+	// point the agent at it and ask for a full rewrite that fixes the issues.
+	const feedback = opts.feedback?.trim();
+	const prompt = feedback
+		? `${basePrompt}
+
+A previous summary.md already exists in the current directory. Read it first. The user reviewed it and wants the following fixed in the new version:
+
+<feedback>
+${feedback}
+</feedback>
+
+Write a complete new summary.md (overwrite the old one) that addresses this feedback while still following the skill's format. Keep what was good about the previous version unless the feedback says otherwise.`
+		: basePrompt;
 
 	const args: ChatStreamArgs = {
 		sessionId,

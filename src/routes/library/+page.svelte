@@ -88,6 +88,7 @@
 			<option value="all">All statuses</option>
 			<option value="unread">Unread</option>
 			<option value="reading">Reading</option>
+			<option value="skimmed">Skimmed</option>
 			<option value="read">Read</option>
 			<option value="archived">Archived</option>
 		</select>

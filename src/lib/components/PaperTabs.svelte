@@ -112,6 +112,8 @@
 
 	function statusDot(status: string): string {
 		switch (status) {
+			case 'skimmed':
+				return 'bg-sky-500';
 			case 'reading':
 				return 'bg-yellow-500';
 			case 'read':

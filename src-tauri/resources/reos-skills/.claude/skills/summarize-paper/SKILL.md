@@ -123,7 +123,7 @@ A plain-English summary of the contribution. What does the system take in, what 
 
 ## Technical pipeline
 Walk through the system's internal process at a level of detail useful to an engineer evaluating whether to use or build on this work. For each major stage:
-- **Input**: What goes in (be specific about representations — e.g., "RGB-D point cloud ∈ ℝ^(N×6)", "SMPL-X body parameters", "natural language instruction")
+- **Input**: What goes in (be specific about representations — e.g., "RGB-D point cloud $P \in \mathbb{R}^{N \times 6}$ of $N$ points, each with XYZ position and RGB color", "SMPL-X body parameters", "natural language instruction")
 - **Process**: What happens (the core mechanism, architecture, or algorithm — enough to understand the approach, not enough to reimplement)
 - **Output**: What comes out
 
@@ -193,6 +193,15 @@ In 2-4 sentences: does this paper change how a practitioner should think about t
 - Keep the whole summary to roughly 800-1500 words depending on paper complexity — long enough to be useful, short enough to be worth reading over the paper itself
 - **Figures and tables**: embed the crops from Step 4 right where the prose discusses them (see Step 4 for the syntax). Don't stack them all at the top or bottom.
 - **Math formulas**: The summary is rendered with KaTeX. Use LaTeX math syntax: `$...$` for inline math and `$$...$$` for display math. For example, write `$\mathcal{O}(n \log n)$` for inline complexity, or `$$\mathcal{L} = \sum_{i=1}^{N} \ell(y_i, \hat{y}_i)$$` for a display equation. Always use proper LaTeX commands (`\mathbb`, `\mathcal`, `\sum`, `\frac`, `\in`, `\rightarrow`, Greek letters like `\alpha`, `\beta`, etc.) instead of plain-text approximations. Do not use Unicode math symbols when LaTeX equivalents exist.
+- **Define every symbol**: The summary must be readable without the paper open, so every symbol, variable, operator, subscript, and superscript you use in math must be defined in the summary itself — never assume the reader remembers the paper's notation. Define each one at or before its first use (e.g., "the policy $\pi_\theta$, parameterized by weights $\theta$, maps observations $o_t$ to actions $a_t$"), or immediately after a display equation with a "where …" clause covering every symbol in it:
+
+  ```markdown
+  $$\mathcal{L}(\theta) = \mathbb{E}_{t, x_0, \epsilon}\left[\lVert \epsilon - \epsilon_\theta(x_t, t) \rVert^2\right]$$
+
+  where $x_0$ is a clean data sample, $\epsilon \sim \mathcal{N}(0, I)$ is Gaussian noise, $t$ is the diffusion timestep, $x_t$ is $x_0$ noised to step $t$, and $\epsilon_\theta$ is the network (weights $\theta$) trained to predict the noise.
+  ```
+
+  This includes dimensions in shapes (say what $N$ is in $\mathbb{R}^{N \times 6}$) and symbols that appear only inside embedded figure captions you write. Once defined, reuse the same symbol consistently; don't silently switch notation. Standard notation needs no definition ($\mathbb{E}$, $\sum$, $\nabla$, $\mathbb{R}$, $\mathcal{N}$, big-O). If a symbol isn't worth defining, it isn't worth including — describe the idea in words instead.
 
 ## Step 4: Extract the key figures and tables
 
