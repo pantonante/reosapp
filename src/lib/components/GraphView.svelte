@@ -402,7 +402,7 @@
 	<div class="flex flex-wrap items-center gap-2 border-b border-border/60 px-3 py-2">
 		<div class="relative">
 			<Search class="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-			<Input
+			<Input autocorrect="off" autocapitalize="off" autocomplete="off" spellcheck="false"
 				bind:value={search}
 				placeholder="Search title, author, keyword…"
 				class="h-8 w-64 pl-7 text-xs"

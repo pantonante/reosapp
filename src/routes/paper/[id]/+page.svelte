@@ -832,7 +832,7 @@
 		}}
 	>
 		<div class="space-y-3">
-			<Input bind:value={moveQuery} placeholder="Search threads…" autofocus />
+			<Input autocorrect="off" autocapitalize="off" autocomplete="off" spellcheck="false" bind:value={moveQuery} placeholder="Search threads…" autofocus />
 			<div class="max-h-80 space-y-0.5 overflow-y-auto">
 				{#each moveOptions as o (o.id)}
 					{@const isCurrent = o.id === currentThreadId}

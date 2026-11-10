@@ -106,7 +106,7 @@
 
 <section class="space-y-6" aria-label="Notes">
 	<div class="flex flex-wrap items-center gap-2">
-		<Input bind:value={search} placeholder="Filter notes…" class="max-w-xs" />
+		<Input autocorrect="off" autocapitalize="off" autocomplete="off" spellcheck="false" bind:value={search} placeholder="Filter notes…" class="max-w-xs" />
 		<div class="flex items-center rounded-md border border-input bg-background p-0.5 sm:ml-auto">
 			{#each [['grid', 'Grid'], ['list', 'List']] as const as [value, label] (value)}
 				<button

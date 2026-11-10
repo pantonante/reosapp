@@ -452,7 +452,7 @@
 		{:else if tab === 'library'}
 		<div class="space-y-6">
 		<div class="flex flex-wrap items-center gap-2">
-			<Input
+			<Input autocorrect="off" autocapitalize="off" autocomplete="off" spellcheck="false"
 				bind:value={search}
 				placeholder="Filter title, authors, arxiv ID…"
 				class="max-w-xs"

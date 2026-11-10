@@ -67,7 +67,7 @@
 			class="panel fixed left-1/2 top-[20vh] z-50 w-full max-w-xl -translate-x-1/2 overflow-hidden"
 		>
 			<Command.Root label="Command palette" class="w-full">
-				<Command.Input
+				<Command.Input autocorrect="off" autocapitalize="off" autocomplete="off" spellcheck="false"
 					bind:value
 					placeholder="Search commands…"
 					class="w-full border-0 border-b border-border/60 bg-transparent px-4 py-3 text-sm focus:outline-hidden"

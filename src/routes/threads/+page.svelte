@@ -142,7 +142,7 @@
 	</header>
 
 	<div class="flex flex-wrap items-center gap-2">
-		<Input
+		<Input autocorrect="off" autocapitalize="off" autocomplete="off" spellcheck="false"
 			bind:value={search}
 			placeholder="Filter by name…"
 			class="max-w-xs"

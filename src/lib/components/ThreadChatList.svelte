@@ -50,7 +50,7 @@
 
 <section class="space-y-6" aria-label="Chats">
 	<div class="flex flex-wrap items-center gap-2">
-		<Input bind:value={search} placeholder="Filter chats…" class="max-w-xs" />
+		<Input autocorrect="off" autocapitalize="off" autocomplete="off" spellcheck="false" bind:value={search} placeholder="Filter chats…" class="max-w-xs" />
 		<Button class="sm:ml-auto" onclick={() => open('new')}>
 			<Plus class="h-4 w-4" />
 			New chat

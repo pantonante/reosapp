@@ -58,7 +58,7 @@
 			class="fixed left-1/2 top-[20vh] z-50 w-full max-w-xl -translate-x-1/2 overflow-hidden rounded-lg border border-border/60 bg-card shadow-2xl"
 		>
 			<Command.Root label="Link a paper" shouldFilter={false} class="w-full">
-				<Command.Input
+				<Command.Input autocorrect="off" autocapitalize="off" autocomplete="off" spellcheck="false"
 					bind:value={query}
 					placeholder="Link a paper — search title, author, or ID…"
 					class="w-full border-0 border-b border-border/60 bg-transparent px-4 py-3 text-sm focus:outline-hidden"
