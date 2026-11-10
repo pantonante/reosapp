@@ -21,6 +21,11 @@
 		goto(`/paper/${id}`);
 	}
 
+	// Middle click: open the paper in a new background tab and stay here.
+	function openInBackground(id: string) {
+		ui.openPaper(id, { newTab: true, background: true });
+	}
+
 	async function deletePaper(id: string) {
 		const p = papers.get(id);
 		if (!p) return;
@@ -55,7 +60,11 @@
 			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 				{#each reading as p (p.id)}
 					<div class="group relative">
-						<PaperCard paper={p} onclick={(e) => open(p.id, e)} />
+						<PaperCard
+							paper={p}
+							onclick={(e) => open(p.id, e)}
+							onmiddleclick={() => openInBackground(p.id)}
+						/>
 						<button
 							class="absolute right-2 top-2 rounded p-1 opacity-0 transition-opacity hover:bg-destructive/15 hover:text-destructive group-hover:opacity-100"
 							onclick={() => deletePaper(p.id)}
@@ -84,7 +93,11 @@
 			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 				{#each unfiled as p (p.id)}
 					<div class="group relative">
-						<PaperCard paper={p} onclick={(e) => open(p.id, e)} />
+						<PaperCard
+							paper={p}
+							onclick={(e) => open(p.id, e)}
+							onmiddleclick={() => openInBackground(p.id)}
+						/>
 						<button
 							class="absolute right-2 top-2 rounded p-1 opacity-0 transition-opacity hover:bg-destructive/15 hover:text-destructive group-hover:opacity-100"
 							onclick={() => deletePaper(p.id)}

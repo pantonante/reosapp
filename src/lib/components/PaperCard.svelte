@@ -8,8 +8,15 @@
 	let {
 		paper,
 		compact = false,
-		onclick
-	}: { paper: Paper; compact?: boolean; onclick?: (e: MouseEvent) => void } = $props();
+		onclick,
+		onmiddleclick
+	}: {
+		paper: Paper;
+		compact?: boolean;
+		onclick?: (e: MouseEvent) => void;
+		/** Middle mouse button (e.g. open in a background tab). */
+		onmiddleclick?: () => void;
+	} = $props();
 
 	function statusDot(status: Paper['readingStatus']): string {
 		switch (status) {
@@ -35,7 +42,16 @@
 
 <Card class={cn('h-full p-4 transition-colors hover:border-border', onclick && 'cursor-pointer hover:bg-secondary/40')}>
 	{#if onclick}
-		<button class="flex h-full w-full flex-col text-left" {onclick}>
+		<button
+			class="flex h-full w-full flex-col text-left"
+			{onclick}
+			onmouseup={(e) => {
+				if (e.button === 1 && onmiddleclick) {
+					e.preventDefault();
+					onmiddleclick();
+				}
+			}}
+		>
 			{@render body()}
 		</button>
 	{:else}

@@ -553,9 +553,9 @@ export const ui = (() => {
 		setPaperView(id: string, v: MainView) {
 			paperView = { ...paperView, [id]: v };
 		},
-		openPaper(id: string, opts?: { newTab?: boolean }) {
+		openPaper(id: string, opts?: { newTab?: boolean; background?: boolean }) {
 			placeTab({ kind: 'paper', id }, opts);
-			activePaperId = id;
+			if (!opts?.background) activePaperId = id;
 		},
 		closePaper(id: string): string | null {
 			const idx = tabOrder.findIndex((t) => t.kind === 'paper' && t.id === id);
@@ -598,14 +598,14 @@ export const ui = (() => {
 			persistTabs();
 			return activePaperId;
 		},
-		openThread(id: string, opts?: { newTab?: boolean }) {
+		openThread(id: string, opts?: { newTab?: boolean; background?: boolean }) {
 			if (id === INBOX_THREAD_ID) {
 				// Inbox is sidebar-only; don't materialize it as a tab.
-				activeThreadId = id;
+				if (!opts?.background) activeThreadId = id;
 				return;
 			}
 			placeTab({ kind: 'thread', id }, opts);
-			activeThreadId = id;
+			if (!opts?.background) activeThreadId = id;
 		},
 		closeThread(id: string): string | null {
 			const idx = tabOrder.findIndex((t) => t.kind === 'thread' && t.id === id);

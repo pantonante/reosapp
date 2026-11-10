@@ -49,6 +49,11 @@
 		ui.openPaper(id, { newTab });
 		goto(`/paper/${id}`);
 	}
+
+	// Middle click: open the paper in a new background tab and stay here.
+	function openInBackground(id: string) {
+		ui.openPaper(id, { newTab: true, background: true });
+	}
 </script>
 
 <div class="space-y-6 p-4 sm:p-8">
@@ -115,7 +120,12 @@
 	{#if view === 'card'}
 		<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
 			{#each filtered as p (p.id)}
-				<PaperCard paper={p} compact onclick={(e) => open(p.id, e)} />
+				<PaperCard
+					paper={p}
+					compact
+					onclick={(e) => open(p.id, e)}
+					onmiddleclick={() => openInBackground(p.id)}
+				/>
 			{/each}
 		</div>
 	{:else}
@@ -135,6 +145,7 @@
 						<tr
 							class="cursor-pointer border-b border-border/40 hover:bg-accent/5"
 							onclick={(e) => open(p.id, e)}
+							onmouseup={(e) => e.button === 1 && openInBackground(p.id)}
 						>
 							<td class="px-3 py-2">
 								<div class="font-medium">{p.title}</div>

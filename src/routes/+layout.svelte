@@ -13,7 +13,9 @@
 	import NewThreadModal from '$lib/components/NewThreadModal.svelte';
 	import BulkSummaryModal from '$lib/components/BulkSummaryModal.svelte';
 	import FirstRunWizard from '$lib/components/FirstRunWizard.svelte';
-	import { syncExternalChanges } from '$lib/tauri/external-sync';
+	import ThreadView from '$lib/components/ThreadView.svelte';
+	import { cn } from '$lib/utils/cn';
+	import { pruneMissingPapers, syncExternalChanges } from '$lib/tauri/external-sync';
 	import { notesSync } from '$lib/stores/notes.svelte';
 	import { handleTextZoomKey } from '$lib/text-zoom.svelte';
 
@@ -25,12 +27,24 @@
 	const EXTERNAL_SYNC_INTERVAL_MS = 5000;
 	let syncing = false;
 
-	async function pullExternalChanges() {
+	// Pruning lists every thread folder, so it runs on boot/focus (throttled)
+	// rather than on the 5s poll.
+	const PRUNE_MIN_INTERVAL_MS = 30_000;
+	let lastPruneAt = 0;
+
+	async function pullExternalChanges(opts: { prune?: boolean } = {}) {
 		if (syncing || !papers.loaded) return;
 		syncing = true;
 		try {
 			const { stale, changed } = await syncExternalChanges();
-			if (changed) await Promise.all([papers.reload(), threads.reload()]);
+			let pruned = 0;
+			if (opts.prune && Date.now() - lastPruneAt >= PRUNE_MIN_INTERVAL_MS) {
+				lastPruneAt = Date.now();
+				pruned = await pruneMissingPapers();
+			}
+			if (pruned > 0) {
+				await Promise.all([papers.reload(), threads.reload(), summaryMeta.reload()]);
+			} else if (changed) await Promise.all([papers.reload(), threads.reload()]);
 			if (stale) notesSync.revision++;
 		} catch (e) {
 			console.error('[reos] external sync failed', e);
@@ -41,9 +55,9 @@
 
 	onMount(() => {
 		const onVisible = () => {
-			if (document.visibilityState === 'visible') void pullExternalChanges();
+			if (document.visibilityState === 'visible') void pullExternalChanges({ prune: true });
 		};
-		const onFocus = () => void pullExternalChanges();
+		const onFocus = () => void pullExternalChanges({ prune: true });
 		window.addEventListener('focus', onFocus);
 		document.addEventListener('visibilitychange', onVisible);
 		const timer = setInterval(() => void pullExternalChanges(), EXTERNAL_SYNC_INTERVAL_MS);
@@ -53,7 +67,7 @@
 			await config.load();
 			if (config.value.papersDir) {
 				await Promise.all([papers.load(), threads.load(), summaryMeta.load()]);
-				await pullExternalChanges();
+				await pullExternalChanges({ prune: true });
 			}
 			booting = false;
 		})();
@@ -66,6 +80,18 @@
 	});
 
 	const needsWizard = $derived(!booting && !config.value.papersDir);
+
+	// SvelteKit unmounts a route's page whenever the route changes, so a thread
+	// page would rebuild from scratch every time you switch tabs. Instead the
+	// layout keeps one ThreadView mounted per open thread tab (plus the current
+	// thread, e.g. the Inbox, which has no tab) and only hides the inactive ones.
+	// Closing the tab unmounts its view.
+	const currentThreadId = $derived(page.url.pathname.match(/^\/threads\/([^/]+)$/)?.[1] ?? null);
+	const keptThreadIds = $derived.by(() => {
+		const ids = ui.openTabs.filter((t) => t.kind === 'thread').map((t) => t.id);
+		if (currentThreadId && !ids.includes(currentThreadId)) ids.push(currentThreadId);
+		return ids;
+	});
 
 	$effect(() => {
 		const path = page.url.pathname;
@@ -105,9 +131,20 @@
 					<PaperTabs />
 					<Breadcrumbs />
 				{/if}
-				<main class="min-h-0 flex-1 overflow-auto">
-					{@render children?.()}
-				</main>
+				<div class="relative min-h-0 flex-1">
+					<main class={cn('absolute inset-0 overflow-auto', currentThreadId && 'invisible')}>
+						{@render children?.()}
+					</main>
+					{#each keptThreadIds as tid (tid)}
+						<!-- visibility rather than display:none, so each view keeps its scroll offset -->
+						<div
+							class={cn('absolute inset-0 overflow-auto', tid !== currentThreadId && 'invisible')}
+							inert={tid !== currentThreadId}
+						>
+							<ThreadView id={tid} />
+						</div>
+					{/each}
+				</div>
 			</div>
 		</div>
 	</div>

@@ -4,11 +4,13 @@
 // the last one we synced, so polling it is a single small file read.
 //
 // Additive by design: new threads, new papers, papers whose folder moved to
-// another thread, and PDFs attached to papers that had none. Deletions on disk
-// are left to a full "Rebuild cache". Thread notes aren't cached at all — a
-// fresh stamp just tells open note views to re-read the disk.
+// another thread, and PDFs attached to papers that had none. Paper folders
+// removed on disk are dropped by `pruneMissingPapers` (run on boot/focus, not
+// on the stamp poll, since Finder deletions don't bump the stamp). Removed
+// thread folders are left to a full "Rebuild cache". Thread notes aren't
+// cached at all — a fresh stamp just tells open note views to re-read the disk.
 
-import { exists, readTextFile } from '@tauri-apps/plugin-fs';
+import { exists, readDir, readTextFile } from '@tauri-apps/plugin-fs';
 import { join } from '@tauri-apps/api/path';
 import type { Paper, Thread } from '$lib/types';
 import { db } from './db';
@@ -19,7 +21,8 @@ import {
 	paperPdfPath,
 	readPaperMeta,
 	readThreadMeta,
-	reosMetaDir
+	reosMetaDir,
+	threadDir
 } from './fs';
 
 const SYNCED_KEY = 'externalSyncedAt';
@@ -126,4 +129,57 @@ export async function syncExternalChanges(): Promise<ExternalSyncResult> {
 	}
 	await db.setMeta(SYNCED_KEY, stamp);
 	return { stale: true, changed };
+}
+
+/**
+ * Drop cached papers whose folder no longer exists on disk (e.g. deleted in
+ * Finder). Returns how many were removed.
+ *
+ * Conservative on purpose — the papers folder lives on a cloud mount that can
+ * be offline: a paper is only pruned when its thread folder is confirmed to
+ * exist (or confirmed gone while the threads root itself is present) and its
+ * own folder is absent from a successful listing. Any read error skips the
+ * thread rather than guessing.
+ */
+export async function pruneMissingPapers(): Promise<number> {
+	const slugs = new Set(await listThreadSlugs());
+	// Empty listing almost always means the mount is unavailable, not that
+	// the user deleted every thread including the inbox.
+	if (slugs.size === 0) return 0;
+
+	const byThread = new Map<string, Paper[]>();
+	for (const p of await db.getAllPapers()) {
+		const slug = p.threadId ?? INBOX_SLUG;
+		const list = byThread.get(slug) ?? [];
+		list.push(p);
+		byThread.set(slug, list);
+	}
+
+	let removed = 0;
+	for (const [slug, cached] of byThread) {
+		let present: Set<string>;
+		if (!slugs.has(slug)) {
+			present = new Set();
+		} else {
+			try {
+				const papersFolder = await join(await threadDir(slug), 'papers');
+				if (!(await exists(papersFolder))) {
+					present = new Set();
+				} else {
+					const entries = await readDir(papersFolder);
+					present = new Set(entries.filter((e) => e.isDirectory).map((e) => e.name));
+				}
+			} catch (e) {
+				console.warn(`[reos] prune: could not list ${slug}, skipping`, e);
+				continue;
+			}
+		}
+		for (const p of cached) {
+			if (present.has(p.arxivId)) continue;
+			// Cascades to thread_papers and summary_meta.
+			await db.removePaper(p.id);
+			removed++;
+		}
+	}
+	return removed;
 }
