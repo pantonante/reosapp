@@ -1,0 +1,26 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "src/lib/components/NoteMarkdown.svelte"
+        ],
+        "createdAt": "2026-10-15T23:11:39.624Z",
+        "reason": "Claude triage: markdown blockquote left rule (standard quote typography, not a card), matches existing .summary-md blockquote in PaperSummary.svelte"
+      },
+      {
+        "rule": "broken-image",
+        "value": "*",
+        "files": [
+          "src/lib/components/ThreadNoteCard.svelte"
+        ],
+        "createdAt": "2026-10-15T23:29:01.792Z",
+        "reason": "Claude triage: grid thumbnail img has a dynamic src rendered only inside {#if thumbUrl}, alt is intentionally empty (decorative; note title follows)"
+      }
+    ]
+  }
+}

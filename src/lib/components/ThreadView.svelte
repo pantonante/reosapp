@@ -165,21 +165,15 @@
 		ui.addPaperOpen = true;
 	}
 
-	async function removePaper(paperId: string) {
-		if (!thread) return;
+	async function deletePaper(paperId: string) {
 		const p = papers.get(paperId);
-		const title = p?.title ?? 'this paper';
+		if (!p) return;
 		const ok = await ask(
-			`Move "${title}" out of "${thread.title}" and back to the inbox? The paper, its PDF, notes, and chats are kept — only the thread membership is removed.`,
-			{
-				title: 'Remove from thread',
-				kind: 'warning',
-				okLabel: 'Move to inbox',
-				cancelLabel: 'Cancel'
-			}
+			`Permanently delete "${p.title}"?\n\nThis will:\n• Remove the paper from your library and from any threads it belongs to\n• Delete the PDF file and the paper's folder from disk\n• Delete all notes, annotations, and chats attached to this paper\n• Delete its cached summary\n\nThis cannot be undone.`,
+			{ title: 'Delete paper', kind: 'warning', okLabel: 'Delete', cancelLabel: 'Cancel' }
 		);
 		if (!ok) return;
-		await papers.move(paperId, 'inbox');
+		await papers.remove(paperId);
 	}
 
 	async function deleteThread() {
@@ -530,8 +524,8 @@
 							/>
 							<button
 								class="absolute right-2 top-2 rounded p-1 opacity-0 transition-opacity hover:bg-destructive/15 hover:text-destructive group-hover:opacity-100"
-								onclick={() => removePaper(p.id)}
-								aria-label="Remove from thread"
+								onclick={() => deletePaper(p.id)}
+								aria-label="Delete paper"
 							>
 								<Trash2 class="h-3 w-3" />
 							</button>
@@ -590,10 +584,10 @@
 											class="rounded p-1 opacity-0 transition-opacity hover:bg-destructive/15 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
 											onclick={(e) => {
 												e.stopPropagation();
-												removePaper(p.id);
+												deletePaper(p.id);
 											}}
-											aria-label="Remove from thread"
-											title="Remove from thread"
+											aria-label="Delete paper"
+											title="Delete paper"
 										>
 											<Trash2 class="h-3 w-3" />
 										</button>
@@ -645,8 +639,8 @@
 										/>
 										<button
 											class="absolute right-2 top-2 rounded p-1 opacity-0 transition-opacity hover:bg-destructive/15 hover:text-destructive group-hover:opacity-100"
-											onclick={() => removePaper(p.id)}
-											aria-label="Remove from thread"
+											onclick={() => deletePaper(p.id)}
+											aria-label="Delete paper"
 										>
 											<Trash2 class="h-3 w-3" />
 										</button>

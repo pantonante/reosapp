@@ -21,3 +21,6 @@ mcp/dist
 .codegraph/
 
 __pycache__/
+
+# Impeccable session cache
+.impeccable/hook.cache.json
