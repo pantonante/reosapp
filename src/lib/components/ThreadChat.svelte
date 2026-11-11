@@ -3,7 +3,7 @@
 	import { Marked } from 'marked';
 	import { katexExtension } from '$lib/utils/markdown-katex';
 	import { Button, Textarea } from '$lib/components/ui';
-	import type { ChatMessage, ChatSummary, Thread } from '$lib/types';
+	import type { ChatMessage, ChatModel, ChatSummary, Thread } from '$lib/types';
 	import {
 		appendThreadChat,
 		listThreadChats,
@@ -11,16 +11,12 @@
 		readThreadChat,
 		threadDir
 	} from '$lib/tauri/fs';
-	import { listenChatEvents, startChatStream, type ChatEvent } from '$lib/tauri/chat';
-	import {
-		collectText,
-		parseStreamEvent,
-		toolIcon,
-		toolVerb,
-		type StreamBlock
-	} from '$lib/tauri/stream';
-	import type { UnlistenFn } from '@tauri-apps/api/event';
-	import { onDestroy, tick, untrack } from 'svelte';
+	import { runChatTurn } from '$lib/chat-runner';
+	import { DEFAULT_CHAT_MODEL, isChatModel } from '$lib/tauri/chat';
+	import { config } from '$lib/stores.svelte';
+	import ChatModelPicker from '$lib/components/ChatModelPicker.svelte';
+	import { toolIcon, toolVerb, type StreamBlock } from '$lib/tauri/stream';
+	import { tick, untrack } from 'svelte';
 	import { Send, Loader2, MessageSquare, Plus } from 'lucide-svelte';
 	import { cn } from '$lib/utils/cn';
 	import { textZoom } from '$lib/text-zoom.svelte';
@@ -82,8 +78,14 @@ Defaults:
 	let composerEl = $state<HTMLTextAreaElement | null>(null);
 	// A chat only gets a file (and a list entry) once its first message is sent.
 	const isUnsaved = $derived(!chats.some((c) => c.id === currentChatId));
-	let unlisten: UnlistenFn | null = null;
-	let sessionId = '';
+	let errorNote = $state('');
+	// Starts on the Settings default; a pick here applies to this view only.
+	let pickedModel = $state<ChatModel | null>(null);
+	const model = $derived<ChatModel>(
+		pickedModel ?? (isChatModel(config.value.chatModel) ? config.value.chatModel : DEFAULT_CHAT_MODEL)
+	);
+	/** Thread whose reply is streaming, when `streaming`. */
+	let streamingFor = '';
 
 	const currentChatTitle = $derived(
 		chats.find((c) => c.id === currentChatId)?.title ?? 'New chat'
@@ -116,10 +118,18 @@ Defaults:
 		currentChatId = newThreadChatId();
 		messages = [];
 		streamBlocks = [];
+		errorNote = '';
 		composerEl?.focus();
 	}
 
 	async function load(wanted: string | null, fresh: boolean) {
+		if (streaming) {
+			// A reply in flight for this thread owns `messages`; one for another
+			// thread keeps running in the background and saves itself.
+			if (streamingFor === thread.id) return;
+			streaming = false;
+			streamBlocks = [];
+		}
 		await loadChatList();
 		if (fresh) return startNewChat();
 		let remembered: string | null = null;
@@ -152,30 +162,9 @@ Defaults:
 		scrollRoot?.scrollTo({ top: scrollRoot.scrollHeight });
 	}
 
-	async function handleEvent(event: ChatEvent) {
-		if (event.type === 'stdout') {
-			const blocks = parseStreamEvent(event.line);
-			if (blocks.length) streamBlocks = [...streamBlocks, ...blocks];
-		} else if (event.type === 'done') {
-			const finalText = collectText(streamBlocks);
-			streaming = false;
-			if (finalText) {
-				const msg: ChatMessage = {
-					role: 'assistant',
-					content: finalText,
-					createdAt: new Date().toISOString()
-				};
-				messages = [...messages, msg];
-				await appendThreadChat(thread.id, currentChatId, msg);
-				await loadChatList();
-			}
-			streamBlocks = [];
-			await tick();
-			scrollToBottom();
-		} else if (event.type === 'error') {
-			streaming = false;
-			streamBlocks = [{ kind: 'text', text: `Error: ${event.message}` }];
-		}
+	function nearBottom(): boolean {
+		if (!scrollRoot) return false;
+		return scrollRoot.scrollHeight - scrollRoot.scrollTop - scrollRoot.clientHeight < 120;
 	}
 
 	async function send() {
@@ -186,30 +175,63 @@ Defaults:
 			content: prompt,
 			createdAt: new Date().toISOString()
 		};
+		const history = messages;
 		messages = [...messages, userMsg];
 		composing = '';
+		errorNote = '';
 		if (!currentChatId) currentChatId = newThreadChatId();
-		await appendThreadChat(thread.id, currentChatId, userMsg);
-		rememberChat(currentChatId);
+		streaming = true;
+		streamingFor = thread.id;
+		streamBlocks = [];
+
+		// Captured now: the reply is saved here even if the user leaves the chat
+		// before it finishes.
+		const tid = thread.id;
+		const chatId = currentChatId;
+		const isCurrent = () => thread.id === tid && currentChatId === chatId;
+
+		await appendThreadChat(tid, chatId, userMsg);
+		rememberChat(chatId);
 		await loadChatList();
 		await tick();
 		scrollToBottom();
 
-		streaming = true;
-		streamBlocks = [];
-		sessionId = `thread-${thread.id}-${Date.now()}`;
-
-		if (unlisten) unlisten();
-		unlisten = await listenChatEvents(sessionId, handleEvent);
-
-		const workspaceDir = await threadDir(thread.id);
-
-		await startChatStream({
-			sessionId,
+		runChatTurn({
+			label: `thread-${tid}`,
 			prompt,
-			pdfPaths: [],
+			history,
+			model,
+			workspaceDir: await threadDir(tid),
 			system: SYSTEM_PROMPT,
-			workspaceDir
+			onUpdate: (blocks) => {
+				if (!isCurrent()) return;
+				streamBlocks = blocks;
+				if (nearBottom()) void tick().then(scrollToBottom);
+			},
+			onFinish: async ({ text, sessionId, error }) => {
+				const current = isCurrent();
+				if (current) {
+					streaming = false;
+					streamBlocks = [];
+				}
+				if (text) {
+					const msg: ChatMessage = {
+						role: 'assistant',
+						content: text,
+						createdAt: new Date().toISOString(),
+						...(sessionId ? { sessionId } : {})
+					};
+					if (current) messages = [...messages, msg];
+					await appendThreadChat(tid, chatId, msg);
+					if (current) await loadChatList();
+				} else if (current) {
+					errorNote = error ?? 'No reply.';
+				}
+				if (current) {
+					await tick();
+					scrollToBottom();
+				}
+			}
 		});
 	}
 
@@ -224,9 +246,6 @@ Defaults:
 		untrack(() => void load(wanted, fresh));
 	});
 
-	onDestroy(() => {
-		if (unlisten) unlisten();
-	});
 </script>
 
 <div class="flex h-full">
@@ -335,11 +354,16 @@ Defaults:
 							{/each}
 							{#if streamBlocks.length === 0}
 								<div class="text-xs text-muted-foreground">
-									… (if this hangs, check the terminal running <code class="font-mono">npm run tauri dev</code>
-									for <code class="font-mono">[chat_stream:…]</code> diagnostic logs)
+									Thinking…
 								</div>
 							{/if}
 						</div>
+					</div>
+				{/if}
+				{#if errorNote && !streaming}
+					<div class="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
+						<div class="mb-1 text-[10px] uppercase tracking-wider text-destructive">No reply</div>
+						<pre class="whitespace-pre-wrap font-mono text-xs text-muted-foreground">{errorNote}</pre>
 					</div>
 				{/if}
 				{#if messages.length === 0 && !streaming}
@@ -364,10 +388,13 @@ Defaults:
 						}
 					}}
 				/>
-				<div class="mt-2 flex flex-wrap items-center justify-end gap-2 sm:justify-between">
-					<span class="hidden min-w-0 flex-1 truncate text-[10px] text-muted-foreground sm:block">
-						Powered by your local <code class="font-mono">claude</code> CLI · skills enabled · navigates thread folder
-					</span>
+				<div class="mt-2 flex items-center justify-between gap-2">
+					<div class="flex min-w-0 flex-1 items-center gap-2">
+						<ChatModelPicker value={model} onchange={(m) => (pickedModel = m)} disabled={streaming} />
+						<span class="hidden min-w-0 truncate text-[10px] text-muted-foreground sm:block">
+							via your local <code class="font-mono">claude</code> CLI
+						</span>
+					</div>
 					<Button size="sm" onclick={send} disabled={streaming || !composing.trim()}>
 						<Send class="h-3.5 w-3.5" />
 						Send

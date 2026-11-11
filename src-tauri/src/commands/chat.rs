@@ -26,6 +26,38 @@ pub struct ChatStreamArgs {
     /// (`<papersRoot>/_reos`). Exposed to the agent via a second `--add-dir`
     /// so skills can read shared resources like `vocabulary.md`.
     pub reos_meta_dir: Option<String>,
+    /// `--model` alias or id (e.g. "sonnet"). None = the CLI's default.
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Claude CLI session id to continue (`--resume`), so follow-up turns keep
+    /// the conversation (and its prompt cache) instead of starting cold.
+    #[serde(default)]
+    pub resume: Option<String>,
+    /// Extra system prompt appended to the CLI's default one (e.g. the paper's
+    /// full text). Written to a temp file and passed via
+    /// `--append-system-prompt-file`, since it can be hundreds of KB.
+    #[serde(default)]
+    pub append_system: Option<String>,
+    /// Stream token-level deltas (`--include-partial-messages`).
+    #[serde(default)]
+    pub partial: bool,
+}
+
+fn context_dir() -> Option<std::path::PathBuf> {
+    Some(dirs::home_dir()?.join(".reos").join("cache").join("chat-context"))
+}
+
+/// Short, log-friendly preview of a stream-json line.
+fn preview(line: &str) -> String {
+    const MAX: usize = 300;
+    if line.len() <= MAX {
+        return line.to_string();
+    }
+    let mut end = MAX;
+    while !line.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}… ({} bytes)", &line[..end], line.len())
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -83,8 +115,38 @@ pub async fn chat_stream(
         .arg("--input-format")
         .arg("text")
         .arg("--verbose");
+    if args.partial {
+        cmd.arg("--include-partial-messages");
+    }
+    if let Some(model) = &args.model {
+        cmd.arg("--model").arg(model);
+    }
+    if let Some(resume) = &args.resume {
+        cmd.arg("--resume").arg(resume);
+    }
     if let Some(system) = &args.system {
         cmd.arg("--system-prompt").arg(system);
+    }
+    let mut context_file: Option<std::path::PathBuf> = None;
+    if let Some(extra) = &args.append_system {
+        if let Some(dir) = context_dir() {
+            let safe_id: String = session_id
+                .chars()
+                .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
+                .collect();
+            let path = dir.join(format!("{safe_id}.txt"));
+            let written = tokio::fs::create_dir_all(&dir).await.is_ok()
+                && tokio::fs::write(&path, extra).await.is_ok();
+            if written {
+                cmd.arg("--append-system-prompt-file").arg(&path);
+                context_file = Some(path);
+            } else {
+                eprintln!("[chat_stream:{session_id}] could not write context file; passing inline");
+                cmd.arg("--append-system-prompt").arg(extra);
+            }
+        } else {
+            cmd.arg("--append-system-prompt").arg(extra);
+        }
     }
     if let Some(dir) = &skills_dir {
         cmd.arg("--add-dir").arg(dir);
@@ -136,6 +198,9 @@ pub async fn chat_stream(
     let mut child = cmd.spawn().map_err(|e| {
         let msg = format!("failed to spawn `claude` CLI: {e}. Ensure it is installed and on PATH.");
         eprintln!("[chat_stream:{session_id}] spawn FAILED: {msg}");
+        if let Some(path) = &context_file {
+            let _ = std::fs::remove_file(path);
+        }
         let _ = app.emit(
             "chat:event",
             ChatEvent::Error {
@@ -159,14 +224,17 @@ pub async fn chat_stream(
 
     let app_for_stdout = app.clone();
     let sid_stdout = session_id.clone();
-    tauri::async_runtime::spawn(async move {
+    let stdout_task = tauri::async_runtime::spawn(async move {
         let mut reader = BufReader::new(stdout).lines();
         let mut count = 0u64;
         loop {
             match reader.next_line().await {
                 Ok(Some(line)) => {
                     count += 1;
-                    eprintln!("[chat_stream:{sid_stdout}] stdout #{count}: {line}");
+                    // Token deltas arrive by the hundred; don't log them.
+                    if !line.starts_with("{\"type\":\"stream_event\"") {
+                        eprintln!("[chat_stream:{sid_stdout}] stdout #{count}: {}", preview(&line));
+                    }
                     let emit_res = app_for_stdout.emit(
                         "chat:event",
                         ChatEvent::Stdout {
@@ -199,7 +267,7 @@ pub async fn chat_stream(
 
     let app_for_stderr = app.clone();
     let sid_stderr = session_id.clone();
-    tauri::async_runtime::spawn(async move {
+    let stderr_task = tauri::async_runtime::spawn(async move {
         let mut reader = BufReader::new(stderr).lines();
         let mut count = 0u64;
         while let Ok(Some(line)) = reader.next_line().await {
@@ -242,6 +310,17 @@ pub async fn chat_stream(
             "[chat_stream:{sid_wait}] exited code={code} after {:.1}s",
             started.elapsed().as_secs_f32()
         );
+        // The process exiting doesn't mean its output has been forwarded: the
+        // reader tasks may still be emitting the last lines (typically the
+        // final answer). `done` must come after them, or the frontend
+        // finalizes an empty reply and the answer is lost. Bounded wait in
+        // case a grandchild process keeps the pipes open.
+        let drain = std::time::Duration::from_secs(10);
+        let _ = tokio::time::timeout(drain, stdout_task).await;
+        let _ = tokio::time::timeout(drain, stderr_task).await;
+        if let Some(path) = context_file {
+            let _ = tokio::fs::remove_file(path).await;
+        }
         if let Ok(mut guard) = registry_for_wait.lock() {
             guard.remove(&sid_wait);
         }

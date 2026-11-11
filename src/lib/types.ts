@@ -79,6 +79,8 @@ export interface ChatMessage {
 	role: 'user' | 'assistant';
 	content: string;
 	createdAt: string;
+	/** Claude CLI session that produced this reply; the next turn resumes it. */
+	sessionId?: string;
 }
 
 /** Lightweight summary of a per-paper chat session, derived from its .jsonl file. */
@@ -91,7 +93,11 @@ export interface ChatSummary {
 
 export interface ReosConfig {
 	papersDir: string | null;
+	/** Default model for chats; unset means Sonnet. */
+	chatModel?: ChatModel | null;
 }
+
+export type ChatModel = 'sonnet' | 'opus';
 
 /**
  * Structured metadata extracted from the YAML frontmatter at the top of each

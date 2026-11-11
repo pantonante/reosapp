@@ -1,2 +1,2 @@
 // Bump on every change. Format: MAJOR.MINOR.PATCH
-export const APP_VERSION = '1.6.37';
+export const APP_VERSION = '1.6.38';

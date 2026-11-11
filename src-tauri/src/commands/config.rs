@@ -7,6 +7,12 @@ use std::path::PathBuf;
 #[serde(rename_all = "camelCase")]
 pub struct ReosConfig {
     pub papers_dir: Option<String>,
+    /// Default model for paper/thread chats ("sonnet" | "opus").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_model: Option<String>,
+    /// Keys this struct doesn't know about, kept so saving doesn't drop them.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 fn config_dir() -> AppResult<PathBuf> {

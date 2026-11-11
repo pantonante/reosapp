@@ -11,6 +11,11 @@
 	import { theme, THEMES, type Theme } from '$lib/theme.svelte';
 	import { cn } from '$lib/utils/cn';
 	import { APP_VERSION } from '$lib/version';
+	import { CHAT_MODELS, DEFAULT_CHAT_MODEL, isChatModel } from '$lib/tauri/chat';
+
+	const chatModel = $derived(
+		isChatModel(config.value.chatModel) ? config.value.chatModel : DEFAULT_CHAT_MODEL
+	);
 
 	let rebuilding = $state(false);
 	let lastResult = $state<RebuildResult | null>(null);
@@ -143,6 +148,39 @@
 					<span class="min-w-0 flex-1">
 						<span class="block text-sm font-medium">{t.label}</span>
 						<span class="block text-[11px] text-muted-foreground">{t.description}</span>
+					</span>
+					{#if active}
+						<Check class="h-4 w-4 text-foreground" />
+					{/if}
+				</button>
+			{/each}
+		</div>
+	</Card>
+
+	<Card class="p-6">
+		<h2 class="text-sm font-semibold">Chat model</h2>
+		<p class="mt-1 text-xs text-muted-foreground">
+			The model paper and thread chats start with. You can switch it for a single chat from its
+			composer.
+		</p>
+		<div class="mt-3 grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Default chat model">
+			{#each CHAT_MODELS as m (m.id)}
+				{@const active = chatModel === m.id}
+				<button
+					type="button"
+					role="radio"
+					aria-checked={active}
+					class={cn(
+						'flex items-center gap-3 rounded-[10px] border p-3 text-left transition-colors',
+						active
+							? 'border-border bg-secondary'
+							: 'border-border/60 hover:border-border hover:bg-secondary/40'
+					)}
+					onclick={() => config.update({ chatModel: m.id })}
+				>
+					<span class="min-w-0 flex-1">
+						<span class="block text-sm font-medium">{m.label}</span>
+						<span class="block text-[11px] text-muted-foreground">{m.description}</span>
 					</span>
 					{#if active}
 						<Check class="h-4 w-4 text-foreground" />

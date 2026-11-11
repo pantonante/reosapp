@@ -32,6 +32,7 @@ pub fn run() {
             commands::rebuild_cache::rebuild_cache,
             commands::chat::chat_stream,
             commands::chat::chat_cancel,
+            commands::paper_text::paper_text,
             commands::extract::extract_pdf_metadata,
             commands::extract::extract_webpage_metadata,
             commands::finder::reveal_in_finder,
